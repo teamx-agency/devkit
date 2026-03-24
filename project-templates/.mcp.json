@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "teamx": {
+      "type": "url",
+      "url": "https://teamx.agency/mcp/v1/message"
+    }
+  }
+}

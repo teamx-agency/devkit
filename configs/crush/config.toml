@@ -1,0 +1,9 @@
+# TeamX Dev Kit — Crush config
+# Docs: https://github.com/charmbracelet/crush
+
+[mcp]
+
+  [mcp.servers.teamx]
+  url = "https://teamx.agency/mcp/v1/message"
+  type = "http"
+  enabled = true

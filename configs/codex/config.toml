@@ -1,0 +1,7 @@
+# TeamX Dev Kit — Codex CLI config
+# Docs: https://developers.openai.com/codex/mcp
+
+[mcp_servers.teamx]
+url = "https://teamx.agency/mcp/v1/message"
+# Si el MCP requiere auth, descomenta y configura:
+# bearer_token_env_var = "TEAMX_MCP_TOKEN"

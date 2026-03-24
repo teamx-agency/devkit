@@ -1,0 +1,14 @@
+# Secrets — nunca commitear
+*.env
+.env.*
+secrets/
+tokens/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDEs
+.idea/
+.vscode/
+*.swp

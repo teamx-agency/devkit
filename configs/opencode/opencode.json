@@ -1,0 +1,10 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "teamx": {
+      "type": "remote",
+      "url": "https://teamx.agency/mcp/v1/message",
+      "enabled": true
+    }
+  }
+}
