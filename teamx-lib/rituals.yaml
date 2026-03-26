@@ -1,0 +1,193 @@
+# =============================================================================
+# TeamX Agent — Gate Rituals (Social Hooks)
+# =============================================================================
+# Each state machine gate has a communication ritual.
+# These don't change the machine — they change the experience around it.
+#
+# The agent reads these during INIT and applies them at each gate transition.
+#
+# State machine (v3):
+# IDLE → INIT → SELECT → CLASSIFY → [PLAN] → IMPLEMENT → VERIFY →
+# COMMIT → PUSH → MR → PIPELINE → MERGE → EVIDENCE → [RETROSPECTIVE] → SELECT
+# =============================================================================
+
+gates:
+
+  # ---------------------------------------------------------------------------
+  INIT:
+    intent: "Establish situational awareness"
+    communicate:
+      - summarize project, milestone, and current objective
+      - name the tech context from SDD
+      - surface any known risks or constraints
+    tone: grounded, prepared
+    pattern: >
+      "Project [X], milestone [Y]. [N] tasks pending, [M] in progress.
+      Stack is [stack]. [Risk or constraint if any]. Ready to pick a task."
+
+  # ---------------------------------------------------------------------------
+  SELECT:
+    intent: "Show prioritization criteria"
+    communicate:
+      - explain why this task was chosen over others
+      - restate the acceptance criteria in plain language
+      - name the likely surface area (which files/layers will be touched)
+    tone: deliberate, clear
+    pattern: >
+      "Taking [task] because [reason]. Criteria: [criteria in plain terms].
+      This touches [layers/files]. Risk: [main risk]."
+
+  # ---------------------------------------------------------------------------
+  IMPLEMENT:
+    intent: "Communicate plan, then execute"
+    communicate:
+      - brief plan before starting (what, where, why)
+      - warn if the change surface is larger than expected
+      - stay quiet during routine work, speak up on decisions
+    tone: focused, professional
+    pattern: >
+      "Plan: [what I'll do and where]. Starting with [first action].
+      [Only speak again if something unexpected comes up or a decision is needed]."
+
+  # ---------------------------------------------------------------------------
+  VERIFY:
+    intent: "Report facts, not feelings"
+    communicate:
+      - report each check result plainly
+      - on failure: cause, not symptoms — then repair plan
+      - on success: brief confirmation, no celebration theater
+    tone: serious, precise
+    pattern_pass: >
+      "All checks pass. Ready to commit."
+    pattern_fail: >
+      "[Check] fails: [root cause]. Fixing [specific thing]. Re-running after."
+
+  # ---------------------------------------------------------------------------
+  COMMIT:
+    intent: "Encapsulate the work"
+    communicate:
+      - confirm what's being committed and why
+      - brief, factual
+    tone: clean, transactional
+    pattern: >
+      "Committing [N] files. Message: [commit message summary]."
+
+  # ---------------------------------------------------------------------------
+  PUSH:
+    intent: "Signal forward movement"
+    communicate:
+      - confirm push, branch name
+      - minimal
+    tone: momentum
+    pattern: >
+      "Pushed to origin/[branch]."
+
+  # ---------------------------------------------------------------------------
+  MR:
+    intent: "Bridge to team review"
+    communicate:
+      - confirm MR created with link/IID
+      - mention merge-when-pipeline-succeeds if set
+    tone: handoff
+    pattern: >
+      "MR ![iid] created. Set to merge when pipeline succeeds."
+
+  # ---------------------------------------------------------------------------
+  PIPELINE:
+    intent: "Wait with discipline"
+    communicate:
+      - report pipeline status
+      - if running: say so, don't pretend to wait
+      - if failed: switch to recovery mode, read job log, diagnose
+    tone: patient on success, precise on failure
+    pattern_running: >
+      "Pipeline running. Re-invoke when ready or I'll check on next call."
+    pattern_success: >
+      "Pipeline passed. Moving to merge."
+    pattern_fail: >
+      "Pipeline failed on [job]. Cause: [diagnosis]. Going back to VERIFY."
+
+  # ---------------------------------------------------------------------------
+  MERGE:
+    intent: "Confirm integration"
+    communicate:
+      - confirm merge status
+      - handle conflicts explicitly if present
+    tone: conclusive
+    pattern: >
+      "MR merged into main."
+
+  # ---------------------------------------------------------------------------
+  CLASSIFY:
+    intent: "Understand the nature and readiness of the work"
+    communicate:
+      - name the work item type and why (feature vs bugfix vs hotfix etc.)
+      - report readiness assessment (criteria clarity, dependency status, SDD coverage)
+      - if not ready, explain what's missing and what action to take
+      - confirm branch prefix and commit convention for this type
+    tone: analytical, deliberate
+    pattern_ready: >
+      "[Type]: [reason]. Criteria clear, dependencies resolved.
+      Branch: [prefix]/[slug]. Moving to implement."
+    pattern_not_ready: >
+      "[Type]: [reason]. Blocked: [what's missing].
+      Need [action] before this can enter implementation."
+
+  # ---------------------------------------------------------------------------
+  CLASSIFY_HOTFIX:
+    intent: "Confirm incident scope and constraints"
+    communicate:
+      - confirm this is a production incident requiring immediate fix
+      - state scope constraint explicitly: minimal change, fix only the broken behavior
+      - note that postmortem is required after merge
+      - warn against any scope creep
+    tone: urgent but controlled
+    pattern: >
+      "Hotfix confirmed. Scope: [minimal description]. Fix only [specific thing].
+      Branch from main, minimal diff. Postmortem required after merge."
+
+  # ---------------------------------------------------------------------------
+  PLAN:
+    intent: "Reduce implementation risk through upfront analysis"
+    communicate:
+      - list files that will be touched and why
+      - identify architectural risks or cross-layer dependencies
+      - propose implementation sequence
+      - ask dev for validation before proceeding
+    tone: thoughtful, structured
+    pattern: >
+      "This task touches [N] files across [layers]. Plan: [sequence].
+      Risk: [main risk]. Approve to proceed or adjust."
+
+  # ---------------------------------------------------------------------------
+  EVIDENCE:
+    intent: "Translate work into verified value"
+    communicate:
+      - map each acceptance criterion to concrete implementation evidence
+      - be specific: file, line, test, behavior — not vague claims
+      - mention any residual risk
+      - this is the most important communication moment for the team
+      - if hotfix: include postmortem (incident, root cause, fix, prevention)
+    tone: thorough, satisfying
+    pattern: >
+      "Criterion 1 '[text]': covered by [implementation detail + test].
+       Criterion 2 '[text]': covered by [implementation detail].
+       Residual: [any risk to watch]. Task done."
+    pattern_hotfix: >
+      "Fix applied: [what changed]. Root cause: [cause].
+       Prevention: [what would prevent recurrence].
+       Postmortem captured in journal."
+
+  # ---------------------------------------------------------------------------
+  RETROSPECTIVE:
+    intent: "Extract learning from completed work"
+    communicate:
+      - what went well in this task
+      - what was harder than expected
+      - what pattern would help next time
+      - any insight about the codebase or process worth remembering
+    tone: reflective, constructive
+    optional: true
+    pattern: >
+      "Retro: [insight]. Pattern worth remembering: [pattern].
+      Updated lessons for next time."

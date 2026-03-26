@@ -1,0 +1,80 @@
+# =============================================================================
+# TeamX Agent — Work Item Type Registry
+# =============================================================================
+# Defines how different types of work flow through the state machine.
+# Read by the agent during CLASSIFY gate to determine branch prefix,
+# commit convention, flow variant, and evidence requirements.
+#
+# The bash functions in state.sh use a hardcoded mapping (YAML parsing
+# in bash is impractical). This file is the canonical reference —
+# keep state.sh in sync when modifying.
+# =============================================================================
+
+work_types:
+
+  feature:
+    description: New capability or user-facing functionality
+    branch_prefix: "feat/"
+    commit_prefix: "feat:"
+    flow_variant: standard
+    evidence_requirements:
+      - criteria_mapping
+      - test_coverage
+
+  bugfix:
+    description: Fix for existing broken behavior (not production incident)
+    branch_prefix: "fix/"
+    commit_prefix: "fix:"
+    flow_variant: standard
+    evidence_requirements:
+      - criteria_mapping
+      - root_cause
+      - regression_test
+
+  hotfix:
+    description: Production incident — minimal scope, maximum urgency
+    branch_prefix: "hotfix/"
+    commit_prefix: "fix:"
+    flow_variant: compressed
+    evidence_requirements:
+      - criteria_mapping
+      - incident_reference
+      - postmortem_pending
+    constraints:
+      - branch from main/production only
+      - minimal diff — fix only the broken behavior
+      - no scope creep under any circumstance
+      - postmortem required after merge
+
+  refactor:
+    description: Structural improvement with no behavior change
+    branch_prefix: "refactor/"
+    commit_prefix: "refactor:"
+    flow_variant: standard
+    evidence_requirements:
+      - criteria_mapping
+      - no_behavior_change
+
+  chore:
+    description: Maintenance, dependencies, config, CI updates
+    branch_prefix: "chore/"
+    commit_prefix: "chore:"
+    flow_variant: standard
+    evidence_requirements:
+      - criteria_mapping
+
+  discovery:
+    description: Investigation, spike, proof of concept — produces findings, not merged code
+    branch_prefix: "spike/"
+    commit_prefix: "docs:"
+    flow_variant: discovery
+    evidence_requirements:
+      - findings_summary
+      - next_steps
+
+# =============================================================================
+# Flow variants
+# =============================================================================
+# standard:    full gate sequence (CLASSIFY → [PLAN] → IMPLEMENT → VERIFY → ... → EVIDENCE)
+# compressed:  skip PLAN, minimal EVIDENCE, postmortem required (hotfix)
+# discovery:   skip VERIFY → MERGE gates, produce document instead of merged code
