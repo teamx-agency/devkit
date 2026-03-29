@@ -1,10 +1,16 @@
 # TeamX Dev Kit
 
-Setup en **< 2 minutos** para cualquier dev que se una a TeamX. Instala el MCP de la agencia, los comandos del delivery OS y el sistema de experiencia del agente en todos los AI coding tools compatibles.
+Setup en **< 2 minutos** para cualquier dev que se una a TeamX. Instala el delivery OS con enforcement automatico de gates, MCP de la agencia y sistema de experiencia del agente.
 
-## Instalacion rapida
+## Instalacion (v2 — Plugin)
 
-**macOS / Linux:**
+**Recomendado: Claude Code Plugin System**
+```
+/plugin marketplace add https://github.com/teamx-agency/devkit
+/plugin install devkit
+```
+
+**Fallback: script manual (macOS / Linux)**
 ```bash
 curl -sSL https://raw.githubusercontent.com/teamx-agency/devkit/main/install.sh | bash
 ```
@@ -16,9 +22,22 @@ irm https://raw.githubusercontent.com/teamx-agency/devkit/main/install.ps1 | iex
 
 ---
 
+## Que hay de nuevo en v2
+
+| v1 (anterior) | v2 (actual) |
+|---------------|-------------|
+| 365 lineas de instrucciones que el agente "debia" seguir | **5 hooks programaticos** que enforcement gates automaticamente |
+| Agente olvidaba gates, leia mal tareas | PreToolUse bloquea herramientas en gates incorrectos |
+| Se detenia con trabajo pendiente | Stop hook bloquea parar hasta completar el gate |
+| Perdia contexto tras compactacion | PreCompact preserva estado automaticamente |
+| Solo instrucciones markdown | Plugin system con TypeScript compilado |
+| `install.sh` copiaba archivos | `/plugin install devkit` |
+
+---
+
 ## Arquitectura
 
-El devkit opera en 4 capas como un **delivery operating system**, no un runner de tareas:
+El devkit opera en 4 capas como un **delivery operating system**:
 
 ```
 +---------------------------------------------------------------+
@@ -28,39 +47,29 @@ El devkit opera en 4 capas como un **delivery operating system**, no un runner d
 +---------------------------------------------------------------+
 |  2. Context Engine  — SDD, tareas, criterios, decisiones      |
 +---------------------------------------------------------------+
-|  1. Kernel          — state machine, gates, scripts, tools    |
+|  1. Kernel          — state machine, gates, hooks, scripts    |
 +---------------------------------------------------------------+
 ```
 
 **Regla fundamental:** el state machine decide las acciones; la persona decide como acompanar.
 
-### Kernel determinista (capa 1)
+### Hook-based enforcement (nuevo en v2)
 
-State machine, `.teamx/state.json`, gates duros, verify scripts, clasificacion de trabajo, readiness checks, flow variants, politicas de commit/MR/pipeline/evidencia.
+5 hooks de Claude Code que leen `.teamx/state.json` y enforcement gates programaticamente:
 
-### Context engine (capa 2)
+| Hook | Evento | Que hace |
+|------|--------|----------|
+| `pre-tool-gate` | PreToolUse | Bloquea Edit/Write fuera de IMPLEMENT, git commit fuera de COMMIT, etc. |
+| `stop-guard` | Stop | Bloquea parar con trabajo pendiente (safety valve a los 5 bloqueos) |
+| `session-start` | SessionStart | Restaura estado + handoff + lessons al iniciar sesion |
+| `pre-compact-save` | PreCompact | Preserva estado antes de compactacion de contexto |
+| `post-tool-state` | PostToolUse | Re-inyecta estado tras llamadas MCP, advierte criterios faltantes |
 
-SDD summary, tarea actual, acceptance criteria, decisiones previas, convenciones del repo, contexto de milestone, riesgos conocidos, constraints tecnicos, lessons de tareas anteriores.
+Los hooks **solo leen** `state.json` — nunca escriben. Los bash scripts (state.sh, verify.sh) siguen siendo el backend determinista.
 
-### Experience layer (capa 3)
-
-Modos de interaccion (execution/pairing/recovery/review), rituales por gate, gramatica de mensajes, narrative compression, candor policy.
-
-### Team identity (capa 4)
-
-AgenteX, Senior Delivery Engineer. Valores, forma de colaborar, estandares de honestidad, forma de escalar riesgos.
-
----
-
-## Tools soportadas
-
-| Tool | MCP | Comandos | Config path |
-|------|-----|----------|-------------|
-| Claude Code | ✅ | ✅ 5 comandos | `~/.claude/claude.json` |
-| Google Antigravity | ✅ | ✅ `AGENTS.md` | `~/.gemini/antigravity/mcp_config.json` |
-| OpenCode | ✅ | ✅ `.opencode/commands/` | `~/.config/opencode/opencode.json` |
-| Codex CLI | ✅ | — | `~/.codex/config.toml` |
-| Crush | ✅ | — | `~/.config/crush/config.toml` |
+```
+LLM llama state.sh -> state.sh escribe state.json -> hook lee state.json -> enforce
+```
 
 ---
 
@@ -68,51 +77,50 @@ AgenteX, Senior Delivery Engineer. Valores, forma de colaborar, estandares de ho
 
 ```
 teamx-devkit/
-├── install.sh                        <- Entry point macOS/Linux
-├── install.ps1                       <- Entry point Windows
-├── configs/
-│   ├── claude/
-│   │   ├── claude.json               <- MCP global para Claude Code
-│   │   └── commands/
-│   │       ├── teamx-dev.md          <- /teamx-dev (delivery OS)
-│   │       ├── teamx-status.md       <- /teamx-status (dashboard)
-│   │       ├── teamx-review.md       <- /teamx-review (code review)
-│   │       ├── teamx-handoff.md      <- /teamx-handoff (context transfer)
-│   │       └── teamx-health.md       <- /teamx-health (project audit)
-│   ├── antigravity/
-│   │   ├── mcp_config.json           <- MCP para Antigravity
-│   │   └── AGENTS.md                 <- Instrucciones de agente globales
-│   ├── opencode/
-│   │   └── opencode.json             <- MCP + comandos para OpenCode
-│   ├── codex/
-│   │   └── config.toml               <- MCP para Codex CLI
-│   └── crush/
-│       └── config.toml               <- MCP para Crush
-├── teamx-lib/                        <- Kernel + experiencia (per-project)
-│   ├── state.sh                      <- State machine v3 (clasificacion, plan, handoff)
-│   ├── verify.sh                     <- VERIFY gate (CI checks sin LLM)
-│   ├── init.sh                       <- Parsea .gitlab-ci.yml -> ci-profile.json
-│   ├── handoff.sh                    <- Generador de context handoff
-│   ├── health.sh                     <- Health checks locales
-│   ├── lessons.sh                    <- Extraccion de aprendizaje de journals
-│   ├── work_types.yaml               <- Registro de tipos de trabajo
-│   ├── persona.yaml                  <- Identidad del agente (AgenteX)
-│   ├── modes.yaml                    <- Modos de interaccion
-│   ├── rituals.yaml                  <- Rituales de comunicacion por gate
-│   └── voice.md                      <- Gramatica de mensajes y ejemplos
-└── project-templates/
-    ├── .mcp.json                     <- MCP a nivel proyecto (Claude Code)
-    ├── opencode.json                 <- MCP a nivel proyecto (OpenCode)
-    └── AGENTS.md                     <- Instrucciones proyecto (Antigravity)
+├── .claude-plugin/                      <- Plugin manifest
+│   ├── plugin.json
+│   └── marketplace.json
+├── hooks/
+│   └── hooks.json                       <- 5 hooks de Claude Code
+├── scripts/
+│   ├── run.cjs                          <- Cross-platform hook runner
+│   ├── lib/stdin.mjs                    <- Stdin reader con timeout
+│   ├── pre-tool-gate.mjs               <- Entry: gate enforcement
+│   ├── stop-guard.mjs                  <- Entry: completion guard
+│   ├── session-start.mjs               <- Entry: state restoration
+│   ├── pre-compact-save.mjs            <- Entry: context preservation
+│   └── post-tool-state.mjs             <- Entry: state tracking
+├── src/                                 <- TypeScript source
+│   ├── state-reader.ts                  <- Lee .teamx/state.json
+│   ├── gate-rules.ts                    <- Mapeo tool -> gates permitidos
+│   └── hooks/                           <- Logica de cada hook
+├── skills/                              <- Skills del plugin
+│   ├── teamx-dev/SKILL.md              <- /teamx-dev (delivery OS)
+│   ├── teamx-status/SKILL.md           <- /teamx-status (dashboard)
+│   ├── teamx-review/SKILL.md           <- /teamx-review (code review)
+│   ├── teamx-handoff/SKILL.md          <- /teamx-handoff (context transfer)
+│   └── teamx-health/SKILL.md           <- /teamx-health (project audit)
+├── teamx-lib/                           <- Kernel bash scripts + experiencia
+│   ├── state.sh                         <- State machine v3
+│   ├── verify.sh                        <- VERIFY gate (CI checks)
+│   ├── init.sh                          <- Parsea .gitlab-ci.yml
+│   ├── handoff.sh, health.sh, lessons.sh
+│   ├── persona.yaml, modes.yaml, rituals.yaml
+│   ├── voice.md, work_types.yaml
+├── configs/                             <- MCP configs para otros tools
+├── project-templates/                   <- Templates per-project
+├── install.sh                           <- Fallback installer
+├── package.json                         <- Node project
+└── tsconfig.json                        <- TypeScript config
 ```
 
 ---
 
-## Comandos
+## Skills (antes "Comandos")
 
 ### `/teamx-dev PROJECT-ID` — Delivery OS
 
-Ciclo autonomo de desarrollo con state machine persistente, clasificacion de trabajo, quality gates deterministas y sistema de experiencia de 4 capas.
+Ciclo autonomo de desarrollo con state machine, clasificacion, quality gates y experiencia de 4 capas.
 
 ```
 /teamx-dev PRJ-001
@@ -124,13 +132,19 @@ Ciclo autonomo de desarrollo con state machine persistente, clasificacion de tra
 IDLE -> INIT -> SELECT -> CLASSIFY -> [PLAN] -> IMPLEMENT -> VERIFY -> COMMIT -> PUSH -> MR -> PIPELINE -> MERGE -> EVIDENCE -> [RETROSPECTIVE] -> SELECT
 ```
 
-#### Nuevos gates
+#### Gate enforcement (automatico)
 
-| Gate | Tipo | Proposito |
-|------|------|-----------|
-| **CLASSIFY** | Obligatorio | Clasifica tipo de trabajo, verifica readiness, crea branch con prefix correcto |
-| **PLAN** | Opcional | Pre-planificacion para tareas complejas (>5 archivos, cross-layer, riesgo alto) |
-| **RETROSPECTIVE** | Opcional | Extrae aprendizaje despues de EVIDENCE |
+| Herramienta | Gate requerido |
+|-------------|---------------|
+| Edit, Write | IMPLEMENT |
+| `git commit` | COMMIT |
+| `git push` | PUSH |
+| `git checkout -b` | CLASSIFY |
+| `verify.sh` | VERIFY |
+| `transition_task` | SELECT, EVIDENCE |
+| `satisfy_acceptance_criterion` | EVIDENCE |
+
+Si el agente intenta usar una herramienta en un gate incorrecto, el hook la bloquea con un mensaje explicando que gate necesita.
 
 #### Tipos de trabajo
 
@@ -138,163 +152,77 @@ IDLE -> INIT -> SELECT -> CLASSIFY -> [PLAN] -> IMPLEMENT -> VERIFY -> COMMIT ->
 |------|--------|--------|------|
 | feature | `feat/` | `feat:` | standard |
 | bugfix | `fix/` | `fix:` | standard |
-| hotfix | `hotfix/` | `fix:` | compressed (sin PLAN, postmortem obligatorio) |
+| hotfix | `hotfix/` | `fix:` | compressed |
 | refactor | `refactor/` | `refactor:` | standard |
 | chore | `chore/` | `chore:` | standard |
-| discovery | `spike/` | `docs:` | discovery (sin VERIFY->MERGE, produce documento) |
-
-#### Task readiness
-
-Antes de que una tarea entre a IMPLEMENT, CLASSIFY verifica:
-- Tiene acceptance criteria? (si no -> NEEDS_REFINEMENT, no avanza)
-- Son claros y no ambiguos? (candor policy)
-- Dependencias resueltas?
-- Contexto SDD suficiente?
+| discovery | `spike/` | `docs:` | discovery |
 
 #### Modos de interaccion
 
 | Modo | Cuando | Comportamiento |
 |------|--------|---------------|
-| **Execution** | Path claro, sin ambiguedad | Minimo texto, updates en transiciones |
+| **Execution** | Path claro | Minimo texto, updates en transiciones |
 | **Pairing** | Decisiones arquitectonicas | Explica tradeoffs, compara alternativas |
 | **Recovery** | Check falla, pipeline roto | Diagnostico preciso, zero panico |
-| **Review** | Evidencia, evaluacion de calidad | Mas critico, conecta hallazgos con riesgo |
+| **Review** | Evidencia, evaluacion | Mas critico, conecta hallazgos con riesgo |
 
 ---
 
 ### `/teamx-review MR-IID` — Code Review
 
-Review estructurado de un MR de GitLab con mapeo de criterios y evaluacion de riesgo.
-
-```
-/teamx-review 42
-/teamx-review 42 PRJ-001
-```
-
-Output: criteria coverage, code quality, risk assessment, verdict (APPROVE/REQUEST_CHANGES/NEEDS_DISCUSSION).
-
-Flujo independiente — no modifica el state machine.
-
----
+Review estructurado con mapeo de criterios y evaluacion de riesgo.
 
 ### `/teamx-handoff` — Context Handoff
 
-Genera o resume un handoff de contexto cuando un dev para a mitad de tarea o otro retoma.
-
-```
-/teamx-handoff           # Generar handoff
-/teamx-handoff resume    # Resumir desde handoff existente
-```
-
-Captura: gate actual, archivos tocados, decisiones con rationale, riesgos abiertos.
-
----
+Genera o resume handoff de contexto entre sesiones.
 
 ### `/teamx-health PROJECT-ID` — Project Health
 
-Auditoria de salud operativa del proyecto.
-
-```
-/teamx-health PRJ-001
-```
-
-Checks: tareas sin criteria, branches stale, pipelines rotos, milestones vencidos, tareas in_progress demasiado tiempo.
-
-Score: GREEN / YELLOW / RED.
-
----
+Auditoria de salud: tareas, pipelines, branches, milestones. Score: GREEN / YELLOW / RED.
 
 ### `/teamx-status` — Quick Status
 
-Dashboard rapido del estado de proyectos activos.
-
-```
-/teamx-status              # Vista global
-/teamx-status PRJ-001      # Vista detallada
-```
-
----
-
-## Setup manual (sin script)
-
-### Claude Code
-```bash
-mkdir -p ~/.claude/commands
-cp configs/claude/claude.json ~/.claude/claude.json
-cp configs/claude/commands/*.md ~/.claude/commands/
-```
-
-### Google Antigravity
-```bash
-mkdir -p ~/.gemini/antigravity
-cp configs/antigravity/mcp_config.json ~/.gemini/antigravity/mcp_config.json
-```
-
-### OpenCode
-```bash
-mkdir -p ~/.config/opencode
-cp configs/opencode/opencode.json ~/.config/opencode/opencode.json
-```
-
-### Codex CLI
-```bash
-mkdir -p ~/.codex
-cp configs/codex/config.toml ~/.codex/config.toml
-```
-
-### Crush
-```bash
-mkdir -p ~/.config/crush
-cp configs/crush/config.toml ~/.config/crush/config.toml
-```
-
----
-
-## Por proyecto (recomendado para Claude Code y OpenCode)
-
-```bash
-cp project-templates/.mcp.json .          # Claude Code
-cp project-templates/opencode.json .       # OpenCode
-cp project-templates/AGENTS.md .          # Antigravity
-```
+Dashboard rapido de proyectos activos.
 
 ---
 
 ## MCP TeamX — herramientas disponibles
 
-- **Proyectos** — listar, obtener detalle, estado actual
-- **Milestones** — ver progreso, fechas, criterios de exito
-- **Tareas** — listar, filtrar por status/milestone/prioridad, transicionar
-- **Repositorio** — acceso a GitLab, branches, pipelines, MRs
-- **Workflow** — kanban board, batch transitions, estado del agente
-- **SDD Sessions** — Solution Design Documents del proyecto
+- **Proyectos** — listar, detalle, estado
+- **Tareas** — listar, detalle individual, transicionar, satisfacer criterios
+- **Workflow** — kanban, batch transitions, estado del agente
+- **GitLab** — repos, pipelines, MRs, job logs
+- **SDD** — Solution Design Documents
+- **Time** — log de horas trabajadas
 
 ---
 
 ## Archivos de experiencia
 
-Se descargan durante INIT al `.teamx/` del proyecto. Modificables por proyecto sin tocar el kernel.
+Se descargan durante INIT al `.teamx/` del proyecto:
 
 | Archivo | Proposito |
 |---------|-----------|
-| `work_types.yaml` | Registro de tipos de trabajo: prefixes, variantes de flujo, requerimientos de evidencia |
-| `persona.yaml` | Identidad de AgenteX: valores, candor policy, narrative compression, social rules |
-| `modes.yaml` | 4 modos de interaccion con triggers, comportamiento y ejemplos |
-| `rituals.yaml` | Rituales de comunicacion por cada gate (incluyendo CLASSIFY, PLAN, RETROSPECTIVE) |
-| `voice.md` | 8 tipos de mensaje, ejemplos buenos/malos, anti-patterns |
+| `work_types.yaml` | Tipos de trabajo: prefixes, variantes de flujo |
+| `persona.yaml` | Identidad de AgenteX: valores, candor policy |
+| `modes.yaml` | 4 modos de interaccion |
+| `rituals.yaml` | Rituales de comunicacion por gate |
+| `voice.md` | Gramatica de mensajes, ejemplos, anti-patterns |
+
+---
+
+## Desarrollo
+
+```bash
+npm install          # Instalar dependencias
+npm run build        # Compilar TypeScript -> dist/
+```
 
 ---
 
 ## Backward compatibility
 
-State machine v3 es backward-compatible con v2:
+- State machine v3 es backward-compatible con v2
 - `migrate_state()` en state.sh llena defaults para campos nuevos
 - Directorios `.teamx/` existentes siguen funcionando
-- CLASSIFY solo se aplica a tareas nuevas, no a tareas en progreso
-- Scripts nuevos (handoff.sh, health.sh, lessons.sh) fallan gracefully si no estan presentes
-
----
-
-## Contribuir al devkit
-
-PRs bienvenidos en `https://github.com/teamx-agency/devkit`.
+- `install.sh` sigue disponible como fallback
