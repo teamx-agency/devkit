@@ -159,7 +159,9 @@ Mandatory gate. Determines work type, checks readiness, creates branch.
    - `discovery` — investigation, spike, PoC
 2. Set type: `source .teamx/lib/state.sh && set_work_type "<type>"`
 3. **Check task readiness:**
-   - Does it have acceptance criteria? If not → `set_readiness "needs_refinement"` → STOP
+   - Does it have acceptance criteria?
+     - If the work_type is `chore` or the task belongs to a **non-User-Story milestone** (e.g., Setup, Foundational, Integration & Testing, Documentation & Deployment) → acceptance criteria are **optional**. Proceed without them.
+     - For all other work types (`feature`, `bugfix`, `hotfix`, `refactor`) in User Story milestones → criteria are **required**. If missing → `set_readiness "needs_refinement"` → STOP
    - Are criteria unambiguous? Apply candor policy. If ambiguous → flag specific issues
    - Are dependencies resolved? Check via `teamx_get_workflow_state`. If blocked → `set_readiness "blocked_dependency"` → STOP
    - Is SDD context sufficient for this task?

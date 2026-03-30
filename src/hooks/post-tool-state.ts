@@ -73,14 +73,26 @@ export function handlePostToolUse(data: PostToolInput): PostToolOutput {
     }
   }
 
-  // After get_task_detail: warn about missing criteria
+  // After get_task_detail: warn about missing criteria (only for non-chore tasks outside Setup/Foundational milestones)
   if (toolName === 'mcp__claude_ai_TeamX__teamx_get_task_detail') {
     const output = data.tool_output || data.toolOutput || '';
     if (output.includes('"criteria_status":"missing"') || output.includes('"criteria_status": "missing"')) {
-      messages.push(
-        `[TeamX WARNING] This task has no acceptance criteria (criteria_status: "missing"). ` +
-        `Flag this as a blocker during CLASSIFY — readiness should be "needs_refinement".`
-      );
+      // Check if this is a chore/setup task where criteria are optional
+      const isSetupMilestone = /\"milestone\"\s*:\s*\"(Setup|Foundational|Integration & Testing|Documentation & Deployment)\"/i.test(output)
+        || (!/\"milestone\"\s*:\s*\"User Story/i.test(output) && /\"milestone\"\s*:\s*\"[^"]+\"/.test(output));
+      const workType = state.current_task?.work_type;
+      const isChore = workType === 'chore';
+
+      if (!isSetupMilestone && !isChore) {
+        messages.push(
+          `[TeamX WARNING] This task has no acceptance criteria (criteria_status: "missing"). ` +
+          `Flag this as a blocker during CLASSIFY — readiness should be "needs_refinement".`
+        );
+      } else {
+        messages.push(
+          `[TeamX INFO] This task has no acceptance criteria, but criteria are optional for ${isSetupMilestone ? 'Setup/Foundational' : 'chore'} tasks.`
+        );
+      }
     }
   }
 

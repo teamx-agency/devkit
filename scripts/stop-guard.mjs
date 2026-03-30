@@ -24,7 +24,7 @@ async function main() {
     console.log(JSON.stringify(result));
   } catch {
     // On error, allow stop (never trap the agent)
-    console.log(JSON.stringify({ decision: 'allow' }));
+    console.log(JSON.stringify({ decision: 'approve' }));
   }
 }
 

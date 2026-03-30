@@ -23,7 +23,7 @@ export interface StopInput {
 }
 
 export interface StopOutput {
-  decision: 'block' | 'allow';
+  decision: 'block' | 'approve';
   reason?: string;
 }
 
@@ -63,13 +63,13 @@ export function handleStop(data: StopInput): StopOutput {
   const safeReasons = ['user_abort', 'context_limit', 'rate_limit', 'auth_error'];
   if (safeReasons.some(r => reason.toLowerCase().includes(r))) {
     resetBlockCount(cwd);
-    return { decision: 'allow' };
+    return { decision: 'approve' };
   }
 
   // No state file → not in a workflow
   const state = readState(cwd);
   if (!state) {
-    return { decision: 'allow' };
+    return { decision: 'approve' };
   }
 
   const gate = state.current_gate;
@@ -77,7 +77,7 @@ export function handleStop(data: StopInput): StopOutput {
   // Safe gates → allow stop
   if (SAFE_STOP_GATES.includes(gate as any)) {
     resetBlockCount(cwd);
-    return { decision: 'allow' };
+    return { decision: 'approve' };
   }
 
   // Safety valve: after MAX_CONSECUTIVE_BLOCKS, allow stop
@@ -85,7 +85,7 @@ export function handleStop(data: StopInput): StopOutput {
   if (count >= MAX_CONSECUTIVE_BLOCKS) {
     resetBlockCount(cwd);
     return {
-      decision: 'allow',
+      decision: 'approve',
       reason: `[TeamX Stop Guard] Safety valve: allowing stop after ${MAX_CONSECUTIVE_BLOCKS} consecutive blocks. ` +
         `State preserved in .teamx/state.json for next session.`,
     };
