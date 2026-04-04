@@ -74,9 +74,10 @@ IDLE → INIT → SELECT → CLASSIFY → [PLAN] → IMPLEMENT → VERIFY → CO
    - Add `.teamx/` to `.gitignore`
 5. Run: `bash .teamx/lib/init.sh <repo_path>` — parses `.gitlab-ci.yml` into `ci-profile.json`
 6. Call `teamx_list_sdd_sessions` → if completed, `teamx_read_sdd_session` → extract tech summary
-7. Read all experience files
-8. Check for handoff: if `.teamx/handoff.md` exists, present context
-9. Check for lessons: if `.teamx/lessons.json` exists, surface top patterns
+7. Call `teamx_get_shared_lessons(project_code, limit=10)` → save result to `.teamx/shared-lessons.json` → surface top signals (team-wide bottlenecks and SDD patterns from previous tasks)
+8. Read all experience files
+9. Check for handoff: if `.teamx/handoff.md` exists, present context
+10. Check for lessons: if `.teamx/lessons.json` exists, surface top patterns
 10. Run `source .teamx/lib/state.sh && migrate_state`
 11. Write `.teamx/state.json` with project info, gate=SELECT
 
@@ -159,7 +160,8 @@ Skipped for discovery. Run: `bash .teamx/lib/verify.sh <repo_path>`
 
 ## RETROSPECTIVE (optional)
 
-Run `bash .teamx/lib/lessons.sh` if task yielded learning. Skip for routine work.
+1. Run `bash .teamx/lib/lessons.sh` if task yielded learning. Skip for routine work.
+2. If lessons.json was updated and contains `sdd_quality_signals` or `bottlenecks`: call `teamx_push_lessons(project_code, <lessons_json_content>)` to share patterns with the team.
 
 ---
 

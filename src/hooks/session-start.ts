@@ -51,16 +51,32 @@ export function handleSessionStart(data: SessionStartInput): SessionStartOutput 
     } catch { /* ignore */ }
   }
 
-  // Lessons
+  // Local lessons
   const lessonsPath = join(cwd, '.teamx', 'lessons.json');
   if (existsSync(lessonsPath)) {
     try {
       const lessons = JSON.parse(readFileSync(lessonsPath, 'utf-8'));
       if (lessons?.patterns?.length > 0) {
-        const top = lessons.patterns.slice(0, 3)
-          .map((p: { pattern: string; frequency: number }) => `- ${p.pattern} (seen ${p.frequency}x)`)
+        const top = (lessons.patterns as string[]).slice(0, 3)
+          .map((p: string) => `- ${p}`)
           .join('\n');
-        messages.push(`[TeamX Lessons]\n${top}`);
+        messages.push(`[TeamX Lessons — Local]\n${top}`);
+      }
+    } catch { /* ignore */ }
+  }
+
+  // Shared lessons (from teamx_get_shared_lessons, saved at last INIT)
+  const sharedPath = join(cwd, '.teamx', 'shared-lessons.json');
+  if (existsSync(sharedPath)) {
+    try {
+      const shared = JSON.parse(readFileSync(sharedPath, 'utf-8'));
+      const signals: Array<{ signal: string; pattern: string; frequency: number; gate: string }> =
+        shared?.shared_lessons ?? [];
+      if (signals.length > 0) {
+        const top = signals.slice(0, 3)
+          .map(s => `- [${s.gate}] ${s.pattern} (seen ${s.frequency}x across team)`)
+          .join('\n');
+        messages.push(`[TeamX Shared Lessons — Team]\n${top}`);
       }
     } catch { /* ignore */ }
   }
