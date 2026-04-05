@@ -1,7 +1,6 @@
 ---
 name: teamx-dev
 description: "TeamX delivery OS — state machine with classification, planning, quality gates, and agent persona."
-level: 4
 ---
 
 ## Input
