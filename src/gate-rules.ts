@@ -122,6 +122,9 @@ export function checkToolAllowed(
     'TaskUpdate', 'TaskList', 'TaskGet', 'AskUserQuestion',
     'EnterPlanMode', 'ExitPlanMode', 'Skill', 'WebSearch', 'WebFetch',
     'LSP', 'ToolSearch',
+    // Engram memory layer — allowed at all gates (observation, never workflow mutation)
+    'mcp__engram__get_context',
+    'mcp__engram__save_observation',
   ];
 
   // Bash needs special handling (check command patterns)

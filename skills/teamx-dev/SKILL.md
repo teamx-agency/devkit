@@ -40,8 +40,11 @@ You are a TeamX Agency engineering teammate, not a generic assistant. Be direct,
 
 **Gates:**
 ```
-IDLE → INIT → SELECT → CLASSIFY → [PLAN] → IMPLEMENT → VERIFY → COMMIT → PUSH → MR → PIPELINE → MERGE → EVIDENCE → [RETROSPECTIVE] → SELECT
+IDLE → INIT → SELECT → CLASSIFY → [PLAN] → IMPLEMENT → VERIFY → COMMIT → PUSH → MR → PIPELINE → REVIEW → MERGE → EVIDENCE → RETROSPECTIVE → SELECT
 ```
+
+> **REVIEW** — gate de QA entre PIPELINE y MERGE. El agente presenta el MR y espera aprobación humana: `source .teamx/lib/state.sh && approve_qa_review`
+> **RETROSPECTIVE** — obligatorio. Requiere al menos 1 insight + `teamx_push_lessons`.
 
 **Flow variants:**
 - `standard` — full gate sequence (feature, bugfix, refactor, chore)
@@ -69,6 +72,10 @@ IDLE → INIT → SELECT → CLASSIFY → [PLAN] → IMPLEMENT → VERIFY → CO
      `{ constitution, tech_stack, risks, summary }`
    - Surface constitution and tech stack to user
 7. Call `teamx_get_shared_lessons(project_code, limit=10)` → save to `.teamx/shared-lessons.json` → surface top 3 signals
+7b. **Engram** — `bash .teamx/lib/engram.sh check` → if available:
+   - `bash .teamx/lib/engram.sh import` — sync shared memory from team
+   - Call `get_context(layers=["project","architecture","recent-decisions"])` → surface any relevant cross-session insights under `[Engram Context]`
+   - If not available: skip silently
 8. Read experience files: `persona.yaml`, `modes.yaml`, `rituals.yaml`, `voice.md`, `work_types.yaml`
 9. If `.teamx/handoff.md` exists → present context; if `.teamx/lessons.json` exists → surface top patterns
 10. `source .teamx/lib/state.sh && migrate_state`
@@ -80,11 +87,12 @@ IDLE → INIT → SELECT → CLASSIFY → [PLAN] → IMPLEMENT → VERIFY → CO
 
 1. Call `teamx_get_workflow_state(project_code)` — get available tasks
 2. If no tasks available: report status (all done / all blocked) and stop
-3. Pick highest priority available task; explain in one line:
+3. **Engram** — if available: call `get_context(layers=["task-patterns","past-corrections"])` → use retrieved patterns to inform prioritization and risk assessment (do not narrate the call)
+4. Pick highest priority available task; explain in one line:
    `→ [title] — [reason: priority / unblocked / milestone deadline / explicit request]`
-4. Call `teamx_transition_task(uuid, "in_progress")`
-5. `source .teamx/lib/state.sh && set_current_task "<uuid>" "<title>" "<issue_iid>" && set_gate "CLASSIFY"`
-6. `teamx_post_project_update(project_code, "Starting: <title>", "status")`
+5. Call `teamx_transition_task(uuid, "in_progress")`
+6. `source .teamx/lib/state.sh && set_current_task "<uuid>" "<title>" "<issue_iid>" && set_gate "CLASSIFY"`
+7. `teamx_post_project_update(project_code, "Starting: <title>", "status")`
 
 ---
 
@@ -93,16 +101,17 @@ IDLE → INIT → SELECT → CLASSIFY → [PLAN] → IMPLEMENT → VERIFY → CO
 Mandatory. Determines work type, checks readiness, creates branch.
 
 1. Call `teamx_get_task_detail(task_uuid)` — full description and acceptance criteria
-2. Classify work type: `feature / bugfix / hotfix / refactor / chore / discovery`
-3. `source .teamx/lib/state.sh && set_work_type "<type>"` — sets branch prefix, commit prefix, flow variant
-4. Check readiness:
+2. **Engram** — if available: call `get_context(layers=["architecture","work-type-patterns"])` → check if similar tasks were classified differently in the past; incorporate into readiness assessment (do not narrate)
+3. Classify work type: `feature / bugfix / hotfix / refactor / chore / discovery`
+4. `source .teamx/lib/state.sh && set_work_type "<type>"` — sets branch prefix, commit prefix, flow variant
+5. Check readiness:
    - Acceptance criteria present and unambiguous?
    - If SDD exists: do criteria align with constitution and settled tech-stack decisions?
    - Dependencies resolved?
    - If `criteria_status: "missing"` → `set_readiness "needs_refinement"` → post blocker → STOP
-5. `source .teamx/lib/state.sh && set_readiness "ready"`
-6. Create branch: `git checkout -b <branch_prefix><slug>` → `set_task_branch "<branch>"`
-7. Decide next gate:
+6. `source .teamx/lib/state.sh && set_readiness "ready"`
+7. Create branch: `git checkout -b <branch_prefix><slug>` → `set_task_branch "<branch>"`
+8. Decide next gate:
    - Files > 5, cross-layer change, or high risk → `set_gate "PLAN"`
    - Otherwise → `set_gate "IMPLEMENT"`
 
@@ -112,10 +121,11 @@ Mandatory. Determines work type, checks readiness, creates branch.
 
 1. `source .teamx/lib/state.sh && set_gate "PLAN"`
 2. Read `.teamx/sdd-summary.json` if it exists — constitution, tech stack, known risks
-3. Propose: files to change, call sequence, data flow — grounded in SDD
-4. If any choice deviates from SDD tech-stack or constitution: explain trade-off and ask for explicit confirmation
-5. `source .teamx/lib/state.sh && set_plan '<files_json>' '<risks>' '<notes>'`
-6. Wait for user approval → `approve_plan && set_gate "IMPLEMENT"`
+3. **Engram** — if available: call `get_context(layers=["architecture","implementation-patterns","past-decisions"])` → flag any deviation from remembered architectural decisions as an explicit risk; include `"Engram: [relevant past decision]"` in plan if found
+4. Propose: files to change, call sequence, data flow — grounded in SDD
+5. If any choice deviates from SDD tech-stack or constitution: explain trade-off and ask for explicit confirmation
+6. `source .teamx/lib/state.sh && set_plan '<files_json>' '<risks>' '<notes>'`
+7. Wait for user approval → `approve_plan && set_gate "IMPLEMENT"`
 
 ---
 
@@ -124,10 +134,13 @@ Mandatory. Determines work type, checks readiness, creates branch.
 1. Read acceptance criteria from state (set in CLASSIFY via `teamx_get_task_detail`)
 2. Follow approved plan if one exists; otherwise proceed incrementally
 3. Execute work — implement against each criterion in order
-4. If implementation diverges from plan (unexpected complexity, wrong assumption):
+4. **Engram** — if the human corrects your approach at any point: immediately call
+   `save_observation(layer="corrections", content="[what I proposed] → [what the human corrected to] — [why]", tags=["correction"])`
+   Do NOT wait until RETROSPECTIVE — corrections are the highest-value capture point.
+5. If implementation diverges from plan (unexpected complexity, wrong assumption):
    - STOP coding
    - Describe deviation in one paragraph, wait for confirmation before continuing
-5. `source .teamx/lib/state.sh && set_gate "VERIFY"`
+6. `source .teamx/lib/state.sh && set_gate "VERIFY"`
 
 ---
 
@@ -189,11 +202,27 @@ Mandatory. Determines work type, checks readiness, creates branch.
 
 1. `gitlab_list_pipelines(project_code, ref=branch)` — check status
 2. **running** → state stays at PIPELINE; inform user and stop — next session resumes here
-3. **success** → `set_pipeline_status "<id>" "success" && set_gate "MERGE"`
+3. **success** → `source .teamx/lib/state.sh && set_pipeline_status "<id>" "success" && advance_to_review`
 4. **failed** → recovery mode:
    - `gitlab_get_job_log` to diagnose
    - Fix the issue → `set_gate "IMPLEMENT"` → re-run from IMPLEMENT → VERIFY → COMMIT → PUSH
    - (MR already exists — reuse it; no need to create a new one)
+
+---
+
+## REVIEW
+
+**QA gate — do NOT self-approve. Human confirmation required.**
+
+1. Present MR for review:
+   - List each acceptance criterion and its evidence
+   - Show MR link (from state: `mr_iid`)
+   - Confirm pipeline passed
+2. State clearly: _"Waiting for QA review. Run `source .teamx/lib/state.sh && approve_qa_review` when review is complete."_
+3. STOP — do not advance further until the human runs `approve_qa_review`
+4. After approval: state automatically moves to MERGE via `approve_qa_review`
+
+> This gate exists to prevent self-approved merges. The hook blocks `gitlab_merge` until `approve_qa_review` is called.
 
 ---
 
@@ -220,11 +249,17 @@ Mandatory. Determines work type, checks readiness, creates branch.
 
 5. `teamx_post_project_update(project_code, "✓ <title> — <what was delivered>", "evidence")`
 
-6. `set_gate "RETROSPECTIVE"`
+6. **Engram** — if available: call
+   `save_observation(layer="completed-work", content="Task: [title] | Type: [work_type] | Delivered: [one paragraph] | Key decisions: [list]", tags=["[project_code]", "[work_type]"])`
+   This feeds future `get_context` calls for similar tasks across the team.
+
+7. `set_gate "RETROSPECTIVE"`
 
 ---
 
 ## RETROSPECTIVE
+
+Mandatory. At least 1 insight required before advancing.
 
 1. `bash .teamx/lib/lessons.sh`
 2. Read `.teamx/lessons.json`
@@ -232,7 +267,11 @@ Mandatory. Determines work type, checks readiness, creates branch.
    - `teamx_push_lessons(project_code, <lessons.json content>)`
    - Surface top 2–3 signals to user with one-line interpretation each
 4. If empty: note "No new patterns" briefly
-5. `set_gate "SELECT"` → loop to next task
+5. **Engram** — if available: for each insight, call (once per insight — do not batch):
+   `save_observation(layer="lessons", content="[insight text]", tags=["retro", "[project_code]"])`
+   Then: `bash .teamx/lib/engram.sh export` — syncs memory to git for team import. Output confirms: "Memory exported."
+   Run BEFORE `set_gate "SELECT"`.
+6. `set_gate "SELECT"` → loop to next task
 
 ---
 
@@ -249,7 +288,8 @@ Mandatory. Determines work type, checks readiness, creates branch.
 
 1. CLASSIFY is mandatory — no task enters IMPLEMENT without work type and readiness set
 2. VERIFY is a hard gate — the bash script runs it, not you
-3. Never mark a task done without merged MR (except discovery)
-4. Recovery: `source .teamx/lib/state.sh && migrate_state && print_status`
-5. Respond in user's language
-6. Check flow variant before entering any gate — `should_skip_gate` in state.sh
+3. REVIEW is a human gate — never self-approve; wait for `approve_qa_review`
+4. Never mark a task done without merged MR (except discovery)
+5. Recovery: `source .teamx/lib/state.sh && migrate_state && print_status`
+6. Respond in user's language
+7. Check flow variant before entering any gate — `should_skip_gate` in state.sh

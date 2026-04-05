@@ -3,6 +3,13 @@
     "teamx": {
       "type": "url",
       "url": "https://teamx.agency/mcp/v1/message"
+    },
+    "engram": {
+      "_comment": "Engram — memoria persistente cross-sesion. Instalar: brew install Gentleman-programming/tap/engram",
+      "type": "stdio",
+      "command": "engram",
+      "args": ["mcp"],
+      "env": {}
     }
   }
 }
