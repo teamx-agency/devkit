@@ -40,6 +40,8 @@ export interface TaskState {
   commit_prefix: string | null;
   started_at: string;
   acceptance_criteria: string[];
+  criteria_total?: number;
+  criteria_satisfied?: number;
   plan: PlanState | null;
   verification: Record<string, { status: string; output?: string }>;
   git: GitState;
@@ -68,12 +70,12 @@ export interface TeamXState {
 export type Gate =
   | 'IDLE' | 'INIT' | 'SELECT' | 'CLASSIFY' | 'PLAN'
   | 'IMPLEMENT' | 'VERIFY' | 'COMMIT' | 'PUSH' | 'MR'
-  | 'PIPELINE' | 'MERGE' | 'EVIDENCE' | 'RETROSPECTIVE';
+  | 'PIPELINE' | 'REVIEW' | 'MERGE' | 'EVIDENCE' | 'RETROSPECTIVE';
 
 const ALL_GATES: Gate[] = [
   'IDLE', 'INIT', 'SELECT', 'CLASSIFY', 'PLAN',
   'IMPLEMENT', 'VERIFY', 'COMMIT', 'PUSH', 'MR',
-  'PIPELINE', 'MERGE', 'EVIDENCE', 'RETROSPECTIVE',
+  'PIPELINE', 'REVIEW', 'MERGE', 'EVIDENCE', 'RETROSPECTIVE',
 ];
 
 // --- Reader ---
@@ -122,6 +124,17 @@ export function buildStateSummary(state: TeamXState): string {
     if (t.branch) lines.push(`Branch: ${t.branch}`);
     if (t.readiness) lines.push(`Readiness: ${t.readiness}`);
     if (t.plan) lines.push(`Plan: ${t.plan.approved ? 'approved' : 'pending approval'}`);
+
+    // Acceptance criteria tracking
+    if (t.criteria_total !== undefined && t.criteria_total > 0) {
+      const satisfied = t.criteria_satisfied ?? 0;
+      const pending = t.criteria_total - satisfied;
+      lines.push(`Criteria: ${satisfied}/${t.criteria_total} satisfied${pending > 0 ? ` — ${pending} PENDING` : ' — all done'}`);
+    } else if (t.acceptance_criteria.length > 0) {
+      lines.push(`Criteria: ${t.acceptance_criteria.length} loaded (call teamx_get_task_detail for satisfaction status)`);
+    } else {
+      lines.push(`Criteria: not loaded — call teamx_get_task_detail`);
+    }
 
     const vChecks = Object.entries(t.verification);
     if (vChecks.length > 0) {

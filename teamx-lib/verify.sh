@@ -29,9 +29,36 @@ fi
 
 cd "$REPO_PATH"
 
+# =============================================================================
+# Gap #3 — Validate ci-profile minimum quality before running
+# =============================================================================
+
+CI_CHECK_COUNT=$(jq '.checks | length' "$CI_PROFILE" 2>/dev/null || echo 0)
+HAS_TEST_CHECK=$(jq -r '[.checks[] | select(.stage | test("test"; "i")) or (.name | test("test"; "i"))] | length' "$CI_PROFILE" 2>/dev/null || echo 0)
+
 echo "═══════════════════════════════════════════════════════"
 echo "  VERIFY GATE — Running CI checks locally"
 echo "═══════════════════════════════════════════════════════"
+
+# Warn if ci-profile doesn't meet minimum quality standards
+CI_PROFILE_WARNINGS=false
+if [ "$CI_CHECK_COUNT" -lt 2 ]; then
+    echo ""
+    echo "  ⚠ QA WARNING: ci-profile has only ${CI_CHECK_COUNT} check(s)."
+    echo "    Minimum recommended: 2 checks (lint + tests)."
+    echo "    A trivial ci-profile can make all VERIFY gates pass with no real validation."
+    CI_PROFILE_WARNINGS=true
+fi
+if [ "$HAS_TEST_CHECK" -eq 0 ]; then
+    echo ""
+    echo "  ⚠ QA WARNING: ci-profile has no check with stage/name containing 'test'."
+    echo "    Add at least one test check to prevent untested code from reaching MERGE."
+    CI_PROFILE_WARNINGS=true
+fi
+if $CI_PROFILE_WARNINGS; then
+    echo ""
+    echo "  Proceeding with existing checks — fix ci-profile to eliminate this warning."
+fi
 echo ""
 
 ALL_PASS=true

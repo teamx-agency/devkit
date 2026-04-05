@@ -31,14 +31,21 @@ export function handlePreCompact(data: PreCompactInput): PreCompactOutput {
 
   const summary = buildStateSummary(state);
 
+  // Gap #5 — remind agent to restore criteria after compaction
+  const criteriaReminder = state.current_task
+    ? `\n\n⚠ CRITERIA: After compaction, call teamx_get_task_detail("${state.current_task.uuid}") ` +
+      `to restore acceptance criteria status — criteria are NOT persisted in state.json.`
+    : '';
+
   return {
     continue: true,
     hookSpecificOutput: {
       hookEventName: 'PreCompact',
       additionalContext:
         `[TeamX Context Checkpoint — READ THIS AFTER COMPACTION]\n` +
-        `${summary}\n\n` +
-        `Re-read .teamx/state.json for full context.\n` +
+        `${summary}` +
+        criteriaReminder +
+        `\n\nRe-read .teamx/state.json for full context.\n` +
         `Run: source .teamx/lib/state.sh && print_status`,
     },
   };

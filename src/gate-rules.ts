@@ -62,12 +62,33 @@ const BASH_GATE_RULES: Array<{ pattern: RegExp; allowedGates: Gate[]; descriptio
     allowedGates: ['VERIFY'],
     description: 'verify.sh',
   },
+  // Destructive git operations — only safe during active implementation
+  {
+    pattern: /\bgit\s+reset\b/,
+    allowedGates: ['CLASSIFY', 'IMPLEMENT'],
+    description: 'git reset (destructive — reverts committed/staged work)',
+  },
+  {
+    pattern: /\bgit\s+rebase\b/,
+    allowedGates: [], // never — rewrites shared history
+    description: 'git rebase (history rewrite — forbidden in gate workflow)',
+  },
+  {
+    pattern: /\bgit\s+clean\b/,
+    allowedGates: ['CLASSIFY', 'IMPLEMENT'],
+    description: 'git clean (destructive — removes untracked files)',
+  },
+  {
+    pattern: /\bgit\s+restore\b/,
+    allowedGates: ['CLASSIFY', 'IMPLEMENT'],
+    description: 'git restore (destructive — discards working tree changes)',
+  },
 ];
 
 /** Gates that can be skipped per flow variant */
 const SKIP_GATES: Record<string, Gate[]> = {
   compressed: ['PLAN'],
-  discovery: ['VERIFY', 'COMMIT', 'PUSH', 'MR', 'PIPELINE', 'MERGE'],
+  discovery: ['VERIFY', 'COMMIT', 'PUSH', 'MR', 'PIPELINE', 'REVIEW', 'MERGE'],
 };
 
 /** Gates where it's safe to stop */

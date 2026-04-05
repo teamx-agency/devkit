@@ -8,7 +8,7 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
-import { readState, buildStateSummary } from '../state-reader.js';
+import { readState, buildStateSummary, type TeamXState } from '../state-reader.js';
 import { SAFE_STOP_GATES } from '../gate-rules.js';
 
 const MAX_CONSECUTIVE_BLOCKS = 5;
@@ -55,6 +55,71 @@ export function resetBlockCount(cwd: string): void {
   writeBlockCount(cwd, 0);
 }
 
+// ---------------------------------------------------------------------------
+// Gap #6 — Emergency handoff on safety valve
+// ---------------------------------------------------------------------------
+
+function writeEmergencyHandoff(cwd: string, state: TeamXState): void {
+  const handoffPath = join(cwd, '.teamx', 'handoff.md');
+  const t = state.current_task;
+  const lines = [
+    `# Emergency Handoff — Safety Valve Triggered`,
+    ``,
+    `> Generated automatically after ${MAX_CONSECUTIVE_BLOCKS} consecutive stop-guard blocks.`,
+    `> Resume with: \`/teamx-handoff resume\``,
+    ``,
+    `**Date:** ${new Date().toISOString()}`,
+    `**Gate at exit:** \`${state.current_gate}\``,
+    ``,
+    `## Task`,
+    `- **Title:** ${t?.title ?? 'none'}`,
+    `- **UUID:** ${t?.uuid ?? 'none'}`,
+    `- **Branch:** ${t?.branch ?? 'none'}`,
+    `- **Work type:** ${t?.work_type ?? 'unknown'} (${t?.flow_variant ?? 'standard'})`,
+    `- **Readiness:** ${t?.readiness ?? 'unknown'}`,
+    ``,
+    `## Git State`,
+    `- Committed: ${t?.git?.committed ?? false}`,
+    `- Commit SHA: ${t?.git?.commit_sha ?? 'none'}`,
+    `- Pushed: ${t?.git?.pushed ?? false}`,
+    `- MR IID: ${t?.git?.mr_iid ?? 'none'}`,
+    `- Pipeline: ${t?.git?.pipeline_status ?? 'none'}`,
+    `- Merged: ${t?.git?.merged ?? false}`,
+    ``,
+    `## Verification`,
+  ];
+
+  if (t?.verification) {
+    const checks = Object.entries(t.verification);
+    if (checks.length > 0) {
+      for (const [name, v] of checks) {
+        lines.push(`- ${v.status === 'pass' ? '✓' : '✗'} ${name}: ${v.status}`);
+      }
+    } else {
+      lines.push(`- No checks recorded`);
+    }
+  }
+
+  lines.push(
+    ``,
+    `## Acceptance Criteria`,
+    t?.acceptance_criteria?.length
+      ? t.acceptance_criteria.map(c => `- ${c}`).join('\n')
+      : `- Not loaded — call teamx_get_task_detail(${t?.uuid ?? ''}) after resuming`,
+    ``,
+    `## Milestone`,
+    `- ${state.active_milestone?.title ?? 'none'} (${state.active_milestone?.done_tasks ?? 0}/${state.active_milestone?.total_tasks ?? 0})`,
+    ``,
+    `## ⚠ Warning`,
+    `Agent exited by safety valve — work at gate \`${state.current_gate}\` may be incomplete.`,
+    `Check uncommitted changes before resuming.`,
+  );
+
+  try {
+    writeFileSync(handoffPath, lines.join('\n'), 'utf-8');
+  } catch { /* best-effort */ }
+}
+
 export function handleStop(data: StopInput): StopOutput {
   const cwd = data.cwd || data.directory || process.cwd();
   const reason = data.stop_hook_reason || data.stopHookReason || '';
@@ -80,14 +145,15 @@ export function handleStop(data: StopInput): StopOutput {
     return { decision: 'approve' };
   }
 
-  // Safety valve: after MAX_CONSECUTIVE_BLOCKS, allow stop
+  // Safety valve: after MAX_CONSECUTIVE_BLOCKS, allow stop — but write emergency handoff first (Gap #6)
   const count = readBlockCount(cwd);
   if (count >= MAX_CONSECUTIVE_BLOCKS) {
+    writeEmergencyHandoff(cwd, state);
     resetBlockCount(cwd);
     return {
       decision: 'approve',
       reason: `[TeamX Stop Guard] Safety valve: allowing stop after ${MAX_CONSECUTIVE_BLOCKS} consecutive blocks. ` +
-        `State preserved in .teamx/state.json for next session.`,
+        `Emergency handoff written to .teamx/handoff.md — resume with /teamx-handoff resume.`,
     };
   }
 

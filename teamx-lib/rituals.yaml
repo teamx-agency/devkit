@@ -108,6 +108,23 @@ gates:
       "Pipeline failed on [job]. Cause: [diagnosis]. Going back to VERIFY."
 
   # ---------------------------------------------------------------------------
+  REVIEW:
+    intent: "Gate QA — independent verification before merge"
+    communicate:
+      - signal that pipeline passed and QA review is required before merge
+      - list the acceptance criteria and confirm each has evidence
+      - do NOT self-approve — this gate requires human confirmation
+      - present the MR link and ask QA/reviewer to approve
+    tone: transparent, waiting
+    pattern: >
+      "Pipeline passed. Waiting for QA review before merge.
+      MR: ![iid] — [link]. Criteria satisfied: [N/M].
+      Run approve_qa_review when review is complete."
+    note: >
+      This gate exists to prevent self-approved merges. The agent cannot advance
+      to MERGE without a human running: source .teamx/lib/state.sh && approve_qa_review
+
+  # ---------------------------------------------------------------------------
   MERGE:
     intent: "Confirm integration"
     communicate:
@@ -186,8 +203,13 @@ gates:
       - what was harder than expected
       - what pattern would help next time
       - any insight about the codebase or process worth remembering
+      - push lessons with teamx_push_lessons before advancing to SELECT
     tone: reflective, constructive
-    optional: true
+    optional: false
+    note: >
+      REQUIRED — not optional. Lessons accumulate into shared team knowledge.
+      Skipping this gate perpetuates the same problems across tasks.
+      At minimum: 1 insight + call teamx_push_lessons.
     pattern: >
       "Retro: [insight]. Pattern worth remembering: [pattern].
       Updated lessons for next time."

@@ -406,6 +406,23 @@ complete_current_task() {
 }
 
 # =============================================================================
+# State writing — acceptance criteria progress (Gap #5)
+# =============================================================================
+
+# Track criteria satisfaction counts for summary/compaction survival
+# Usage: set_criteria_progress <total> <satisfied>
+set_criteria_progress() {
+    local total="$1" satisfied="$2"
+    local tmp
+    tmp=$(mktemp)
+    jq --argjson t "$total" --argjson s "$satisfied" '
+        .current_task.criteria_total = $t |
+        .current_task.criteria_satisfied = $s
+    ' "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
+    echo "CRITERIA → ${satisfied}/${total} satisfied"
+}
+
+# =============================================================================
 # Quality gates (deterministic checks)
 # =============================================================================
 
@@ -455,6 +472,31 @@ can_advance_to_commit() {
 
 can_advance_to_push() {
     jq -e '.current_task.git.committed == true and .current_task.git.pushed == false' "$STATE_FILE" > /dev/null 2>&1
+}
+
+can_advance_to_review() {
+    jq -e '.current_task.git.pipeline_status == "success" and .current_gate == "PIPELINE"' "$STATE_FILE" > /dev/null 2>&1
+}
+
+advance_to_review() {
+    if ! can_advance_to_review; then
+        echo "ERROR: Cannot advance to REVIEW — pipeline must be 'success' and gate must be PIPELINE"
+        return 1
+    fi
+    set_gate "REVIEW"
+    echo "REVIEW gate open. QA review required before merge."
+    echo "When review is complete, run: approve_qa_review"
+}
+
+approve_qa_review() {
+    local current_gate
+    current_gate=$(read_gate)
+    if [ "$current_gate" != "REVIEW" ]; then
+        echo "ERROR: Not at REVIEW gate (current: $current_gate)"
+        return 1
+    fi
+    set_gate "MERGE"
+    echo "GATE → MERGE (QA review approved)"
 }
 
 can_advance_to_merge() {
@@ -581,6 +623,12 @@ print_status() {
         local plan_status
         plan_status=$(jq -r '.current_task.plan.approved // empty' "$STATE_FILE" 2>/dev/null)
         [ -n "$plan_status" ] && echo "  Plan:       approved=$plan_status"
+        local criteria_total criteria_satisfied
+        criteria_total=$(jq -r '.current_task.criteria_total // 0' "$STATE_FILE" 2>/dev/null)
+        criteria_satisfied=$(jq -r '.current_task.criteria_satisfied // 0' "$STATE_FILE" 2>/dev/null)
+        if [ "$criteria_total" -gt 0 ] 2>/dev/null; then
+            echo "  Criteria:   ${criteria_satisfied}/${criteria_total} satisfied"
+        fi
         echo "  Verify:     $(jq -r '[.current_task.verification | to_entries[] | .key + "=" + .value.status] | join(", ")' "$STATE_FILE" 2>/dev/null || echo "pending")"
         echo "  Git:        committed=$(jq -r '.current_task.git.committed' "$STATE_FILE") pushed=$(jq -r '.current_task.git.pushed' "$STATE_FILE") merged=$(jq -r '.current_task.git.merged' "$STATE_FILE")"
     fi
