@@ -105,7 +105,12 @@ Mandatory. Determines work type, checks readiness, creates branch.
 3. Classify work type: `feature / bugfix / hotfix / refactor / chore / discovery`
 4. `source .teamx/lib/state.sh && set_work_type "<type>"` — sets branch prefix, commit prefix, flow variant
 5. Check readiness:
-   - Acceptance criteria present and unambiguous?
+   - Acceptance criteria present?
+   - **Criteria quality** — for each criterion validate:
+     - Has an action verb (e.g., "the system returns...", "the user can...", "the endpoint validates...")
+     - Has a concrete pass/fail condition (not "looks good", "works correctly", "is fast")
+     - Is measurable or observable without subjective judgment
+     - If any criterion fails quality check → flag it as ambiguous → `set_readiness "needs_refinement"` → STOP
    - If SDD exists: do criteria align with constitution and settled tech-stack decisions?
    - Dependencies resolved?
    - If `criteria_status: "missing"` → `set_readiness "needs_refinement"` → post blocker → STOP
@@ -156,8 +161,11 @@ Mandatory. Determines work type, checks readiness, creates branch.
 
 ## COMMIT
 
-1. `git add <specific-files>` — never `-A`
-2. Build commit message:
+1. `source .teamx/lib/state.sh && check_branch_divergence`
+   - If diverged: stop, merge/rebase `origin/main`, re-run VERIFY, then return here
+   - If clean: continue
+2. `git add <specific-files>` — never `-A`
+3. Build commit message:
    ```
    <commit_prefix> <task-title>
 
@@ -165,7 +173,7 @@ Mandatory. Determines work type, checks readiness, creates branch.
 
    Co-Authored-By: DevKit <hola@teamx.agency>
    ```
-3. `source .teamx/lib/state.sh && set_git_committed "$(git rev-parse HEAD)" && set_gate "PUSH"`
+4. `source .teamx/lib/state.sh && set_git_committed "$(git rev-parse HEAD)" && set_gate "PUSH"`
 
 ---
 
@@ -194,7 +202,8 @@ Mandatory. Determines work type, checks readiness, creates branch.
      ```
 2. `gitlab_create_merge_request(project_code, branch, title, description)`
 3. `source .teamx/lib/state.sh && set_mr_created "<mr_iid>" && set_gate "PIPELINE"`
-4. `gitlab_merge(project_code, mr_iid, merge_when_pipeline_succeeds=true)`
+
+> Do NOT set `merge_when_pipeline_succeeds`. Merge is triggered manually in MERGE gate after REVIEW approval.
 
 ---
 
@@ -253,7 +262,11 @@ Mandatory. Determines work type, checks readiness, creates branch.
    `save_observation(layer="completed-work", content="Task: [title] | Type: [work_type] | Delivered: [one paragraph] | Key decisions: [list]", tags=["[project_code]", "[work_type]"])`
    This feeds future `get_context` calls for similar tasks across the team.
 
-7. `set_gate "RETROSPECTIVE"`
+7. **Discovery flow only** — if `flow_variant == "discovery"`:
+   - Verify that at least 1 follow-up task exists in the TeamX backlog referencing these findings
+   - If none exist: call `teamx_post_project_update(project_code, "⚠ Discovery findings unlinked — no follow-up tasks created", "warning")`
+   - Note: findings that don't generate tasks are findings that don't change anything
+8. `set_gate "RETROSPECTIVE"`
 
 ---
 
@@ -262,16 +275,45 @@ Mandatory. Determines work type, checks readiness, creates branch.
 Mandatory. At least 1 insight required before advancing.
 
 1. `bash .teamx/lib/lessons.sh`
-2. Read `.teamx/lessons.json`
-3. If `sdd_quality_signals` or `bottlenecks` non-empty:
+2. `source .teamx/lib/state.sh && print_cycle_times` — surface gate cycle times; flag any gate that took disproportionately long
+3. Read `.teamx/lessons.json`
+4. If `sdd_quality_signals`, `bottlenecks`, or `gate_cycle_times` (slow gates) non-empty:
    - `teamx_push_lessons(project_code, <lessons.json content>)`
    - Surface top 2–3 signals to user with one-line interpretation each
-4. If empty: note "No new patterns" briefly
-5. **Engram** — if available: for each insight, call (once per insight — do not batch):
+5. If empty: note "No new patterns" briefly
+5. **Hotfix postmortem** — if `flow_variant == "compressed"`:
+   - Write postmortem into `.teamx/lessons.json`:
+     ```json
+     {
+       "postmortem": {
+         "incident": "What broke and when",
+         "root_cause": "Why it broke",
+         "fix": "What was changed",
+         "prevention": "How to prevent recurrence"
+       }
+     }
+     ```
+   - `source .teamx/lib/state.sh && require_postmortem` — blocks if incomplete
+6. **Engram** — if available: for each insight, call (once per insight — do not batch):
    `save_observation(layer="lessons", content="[insight text]", tags=["retro", "[project_code]"])`
    Then: `bash .teamx/lib/engram.sh export` — syncs memory to git for team import. Output confirms: "Memory exported."
-   Run BEFORE `set_gate "SELECT"`.
-6. `set_gate "SELECT"` → loop to next task
+   Run BEFORE advancing gate.
+7. `source .teamx/lib/state.sh && complete_retrospective` → checks postmortem, then `set_gate "SELECT"`
+
+---
+
+## ROLLBACK (emergency entry point)
+
+Use when a merged change causes a production incident. Do NOT start a normal task flow.
+
+1. `teamx_post_project_update(project_code, "🚨 ROLLBACK initiated: <what broke>", "incident")`
+2. Assess the situation:
+   - **Revert** (fastest) — `git revert <merge_commit_sha>` creates a new commit undoing the change → go to VERIFY → COMMIT → PUSH → MR (note it as rollback) → PIPELINE → REVIEW → MERGE
+   - **Forward-fix** — diagnose root cause, minimal targeted fix → start compressed flow from CLASSIFY
+3. Either path: `set_work_type "hotfix"` — activates compressed flow with mandatory postmortem
+4. Postmortem in RETROSPECTIVE is not optional — this is the highest-value incident for the team
+
+> Rollback is not a gate in the sequence — it's an emergency re-entry into the flow. The state machine handles it via the compressed flow variant.
 
 ---
 
@@ -287,9 +329,15 @@ Mandatory. At least 1 insight required before advancing.
 ## Rules
 
 1. CLASSIFY is mandatory — no task enters IMPLEMENT without work type and readiness set
-2. VERIFY is a hard gate — the bash script runs it, not you
-3. REVIEW is a human gate — never self-approve; wait for `approve_qa_review`
-4. Never mark a task done without merged MR (except discovery)
-5. Recovery: `source .teamx/lib/state.sh && migrate_state && print_status`
-6. Respond in user's language
-7. Check flow variant before entering any gate — `should_skip_gate` in state.sh
+2. Criteria quality is mandatory — vague criteria block readiness just like missing criteria
+3. VERIFY is a hard gate — the bash script runs it, not you
+4. COMMIT requires branch divergence check — `check_branch_divergence` before `git add`
+5. MR does NOT set `merge_when_pipeline_succeeds` — merge happens in MERGE gate after REVIEW
+6. REVIEW is a human gate — never self-approve; wait for `approve_qa_review`
+7. RETROSPECTIVE is mandatory — use `complete_retrospective` to advance, not `set_gate "SELECT"` directly
+8. Hotfix postmortem is a gate — `require_postmortem` blocks SELECT if not written
+9. Never mark a task done without merged MR (except discovery)
+10. Discovery findings must link to follow-up tasks — warn if none exist
+11. Production incidents → ROLLBACK entry point, not a new task
+12. Recovery: `source .teamx/lib/state.sh && migrate_state && print_status`
+13. Respond in user's language

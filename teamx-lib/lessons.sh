@@ -148,6 +148,49 @@ VERIFY_SIGNAL=$(echo "$ALL_JOURNALS" | jq '
 
 SDD_SIGNALS=$(echo "$SDD_SIGNALS $VERIFY_SIGNAL" | jq -s 'add // []')
 
+# ─── Improvement #3: Gate cycle time analysis ────────────────────────────────
+# Reads gate_times arrays from journal and detects which gates are slowest.
+
+GATE_CYCLE_TIMES=$(echo "$ALL_JOURNALS" | jq '
+    [.[].gate_times[]? | select(.duration_minutes != null)] |
+    group_by(.gate) |
+    map({
+        gate: .[0].gate,
+        avg_minutes: ([.[].duration_minutes] | add / length | floor),
+        max_minutes: ([.[].duration_minutes] | max),
+        count: length
+    }) |
+    sort_by(-.avg_minutes)
+')
+
+GATE_BOTTLENECKS=$(echo "$GATE_CYCLE_TIMES" | jq '
+    map(select(
+        (.gate == "PLAN" and .avg_minutes > 90) or
+        (.gate == "IMPLEMENT" and .avg_minutes > 240) or
+        (.gate == "VERIFY" and .avg_minutes > 60) or
+        (.gate == "REVIEW" and .avg_minutes > 1440)
+    )) |
+    map({
+        gate: .gate,
+        avg_minutes: .avg_minutes,
+        max_minutes: .max_minutes,
+        occurrence_count: .count,
+        signal: ("SLOW_GATE_" + .gate),
+        pattern: ("Gate " + .gate + " avg " + (.avg_minutes | tostring) + "min — above threshold"),
+        suggested_sdd_action: (
+            if .gate == "PLAN" then "SDD lacks enough detail — PLAN shouldn't be longer than IMPLEMENT"
+            elif .gate == "IMPLEMENT" then "Task scope too large — split into smaller tasks"
+            elif .gate == "VERIFY" then "CI failures are frequent — review acceptance criteria clarity"
+            elif .gate == "REVIEW" then "QA review is blocking — consider async review protocol"
+            else "Review gate process"
+            end
+        ),
+        severity: (if .avg_minutes > 480 then "high" elif .avg_minutes > 180 then "medium" else "low" end)
+    })
+')
+
+BOTTLENECKS=$(echo "$BOTTLENECKS $GATE_BOTTLENECKS" | jq -s 'add // []')
+
 # ─── Build patterns array ─────────────────────────────────────────────────────
 
 PATTERNS=$(jq -n \
@@ -179,6 +222,7 @@ jq -n \
     --argjson bottlenecks "$BOTTLENECKS" \
     --argjson sdd_signals "$SDD_SIGNALS" \
     --argjson patterns "$PATTERNS" \
+    --argjson gate_cycle_times "$GATE_CYCLE_TIMES" \
     '{
         version: ($version | tonumber),
         project_code: $project_code,
@@ -189,6 +233,7 @@ jq -n \
         sdd_quality_signals: $sdd_signals,
         most_failed_checks: $failed_checks,
         work_type_distribution: $type_distribution,
+        gate_cycle_times: $gate_cycle_times,
         patterns: $patterns
     }' > "$LESSONS_FILE"
 
@@ -199,6 +244,7 @@ echo "  SDD quality signals: $(echo "$SDD_SIGNALS" | jq 'length')"
 echo "  Most failed checks: $(echo "$FAILED_CHECKS" | jq -r 'map(.name + "(" + (.fail_count|tostring) + ")") | join(", ")')"
 echo "  Avg task duration: $AVG_DURATION"
 echo "  Work types: $(echo "$TYPE_DISTRIBUTION" | jq -r 'map(.type + "=" + (.count|tostring)) | join(", ")')"
+echo "  Gate cycle times: $(echo "$GATE_CYCLE_TIMES" | jq -r 'map(.gate + "=" + (.avg_minutes|tostring) + "m") | join(", ")')"
 echo ""
 echo "  → Call teamx_push_lessons() to share these patterns with the team."
 echo "═══════════════════════════════════════════════════════"

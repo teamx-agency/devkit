@@ -9,7 +9,7 @@
 #
 # State machine:
 # IDLE → INIT → SELECT → CLASSIFY → [PLAN] → IMPLEMENT → VERIFY →
-# COMMIT → PUSH → MR → PIPELINE → MERGE → EVIDENCE → [RETROSPECTIVE] → SELECT
+# COMMIT → PUSH → MR → PIPELINE → REVIEW → MERGE → EVIDENCE → RETROSPECTIVE → SELECT
 # =============================================================================
 
 set -euo pipefail
@@ -154,9 +154,27 @@ read_state_summary() {
 
 set_gate() {
     local gate="$1"
+    local now
+    now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     local tmp
     tmp=$(mktemp)
-    jq --arg g "$gate" '.current_gate = $g' "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
+    jq --arg g "$gate" --arg now "$now" '
+        # Record duration of current gate before transitioning
+        if (.current_gate != null and .current_gate != "IDLE" and .gate_entered_at != null) then
+            .gate_times = (
+                (.gate_times // []) + [{
+                    gate: .current_gate,
+                    entered_at: .gate_entered_at,
+                    exited_at: $now,
+                    duration_minutes: (
+                        (($now | fromdateiso8601) - (.gate_entered_at | fromdateiso8601)) / 60 | floor
+                    )
+                }]
+            )
+        else . end |
+        .current_gate = $g |
+        .gate_entered_at = $now
+    ' "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
     echo "GATE → $gate"
 }
 
@@ -195,7 +213,10 @@ set_current_task() {
                 pipeline_status: null,
                 merged: false
             }
-        } | .current_gate = "CLASSIFY"
+        } |
+        .current_gate = "CLASSIFY" |
+        .gate_entered_at = (now | todate) |
+        .gate_times = []
     ' "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
     echo "GATE → CLASSIFY"
 }
@@ -504,6 +525,107 @@ can_advance_to_merge() {
 }
 
 # =============================================================================
+# Improvement #1 — Branch divergence check (run before COMMIT)
+# =============================================================================
+
+# Checks if origin/main has commits not in the current branch.
+# Returns 0 if clean, 1 if diverged (with warning).
+check_branch_divergence() {
+    local branch
+    branch=$(read_current_branch)
+    if [ -z "$branch" ]; then
+        echo "⚠  No branch set — skipping divergence check"
+        return 0
+    fi
+
+    echo "Fetching origin to check divergence..."
+    git fetch origin --quiet 2>/dev/null || {
+        echo "⚠  Could not fetch origin — skipping divergence check"
+        return 0
+    }
+
+    local behind
+    behind=$(git rev-list HEAD..origin/main --count 2>/dev/null || echo "0")
+    behind=$(echo "$behind" | tr -d '[:space:]')
+
+    if [ "$behind" -gt "0" ]; then
+        echo "✗ BRANCH DIVERGENCE: origin/main has ${behind} commit(s) your branch doesn't have."
+        echo "  This will likely cause merge conflicts in the pipeline."
+        echo "  Fix: git merge origin/main  (or git rebase origin/main)"
+        echo "  Resolve conflicts, re-run VERIFY, then continue to COMMIT."
+        return 1
+    fi
+
+    echo "✓ Branch is up to date with origin/main"
+    return 0
+}
+
+# =============================================================================
+# Improvement #2 — Hotfix postmortem enforcement (run in RETROSPECTIVE)
+# =============================================================================
+
+# For compressed (hotfix) flows, blocks SELECT until postmortem is written.
+require_postmortem() {
+    local flow
+    flow=$(read_flow_variant)
+    if [ "$flow" != "compressed" ]; then
+        return 0
+    fi
+
+    if [ ! -f "$LESSONS_FILE" ]; then
+        echo "✗ POSTMORTEM REQUIRED: lessons.json not found."
+        echo "  Run bash .teamx/lib/lessons.sh first, then add postmortem."
+        return 1
+    fi
+
+    local has_postmortem
+    has_postmortem=$(jq -r '.postmortem // empty' "$LESSONS_FILE" 2>/dev/null)
+
+    if [ -z "$has_postmortem" ]; then
+        echo "✗ HOTFIX POSTMORTEM REQUIRED — Cannot advance to SELECT."
+        echo ""
+        echo "  Add to .teamx/lessons.json:"
+        echo '  {'
+        echo '    "postmortem": {'
+        echo '      "incident": "What broke and when",     ← required'
+        echo '      "root_cause": "Why it broke",          ← required'
+        echo '      "fix": "What was changed",             ← required'
+        echo '      "prevention": "How to prevent recurrence" ← required'
+        echo '    }'
+        echo '  }'
+        echo ""
+        echo "  Then run: set_gate SELECT"
+        return 1
+    fi
+
+    # Validate all required fields are non-empty
+    local missing_fields
+    missing_fields=$(jq -r '
+        .postmortem |
+        [ if (.incident // "" | length) == 0 then "incident" else empty end,
+          if (.root_cause // "" | length) == 0 then "root_cause" else empty end,
+          if (.fix // "" | length) == 0 then "fix" else empty end,
+          if (.prevention // "" | length) == 0 then "prevention" else empty end
+        ] | join(", ")
+    ' "$LESSONS_FILE" 2>/dev/null || echo "")
+
+    if [ -n "$missing_fields" ]; then
+        echo "✗ POSTMORTEM INCOMPLETE — Missing fields: $missing_fields"
+        return 1
+    fi
+
+    echo "✓ Postmortem present and complete"
+    return 0
+}
+
+# Wrapper for RETROSPECTIVE completion — checks postmortem for hotfix, then advances
+complete_retrospective() {
+    require_postmortem || return 1
+    set_gate "SELECT"
+    echo "RETROSPECTIVE complete. Loop continues."
+}
+
+# =============================================================================
 # Flow variant helpers
 # =============================================================================
 
@@ -557,7 +679,8 @@ write_journal() {
         plan: (.current_task.plan // null),
         verification: .current_task.verification,
         git: .current_task.git,
-        acceptance_criteria: .current_task.acceptance_criteria
+        acceptance_criteria: .current_task.acceptance_criteria,
+        gate_times: (.gate_times // [])
     }' "$STATE_FILE" > "${JOURNAL_DIR}/task-${uuid}.json"
 
     echo "Journal written: task-${uuid}.json"
@@ -636,5 +759,37 @@ print_status() {
     handoff=$(read_handoff)
     [ "$handoff" != "null" ] && echo "  Handoff:    $(jq -r '.handoff.context_summary' "$STATE_FILE")"
     echo "  Progress:   $(jq -r '(.overall_progress.done|tostring) + "/" + (.overall_progress.total|tostring)' "$STATE_FILE")"
+    echo "═══════════════════════════════════════════════════════"
+}
+
+# Improvement #3 — Show time spent per gate for the current task
+print_cycle_times() {
+    if ! state_exists; then
+        echo "No state file found."
+        return 1
+    fi
+
+    local gate_count
+    gate_count=$(jq '.gate_times // [] | length' "$STATE_FILE" 2>/dev/null || echo "0")
+
+    if [ "$gate_count" -eq 0 ]; then
+        echo "No gate timing data available yet."
+        return 0
+    fi
+
+    echo "═══════════════════════════════════════════════════════"
+    echo "  Cycle time — $(read_current_task_title)"
+    echo "═══════════════════════════════════════════════════════"
+    jq -r '
+        (.gate_times // []) | sort_by(.entered_at) |
+        .[] |
+        "  \(.gate | ljust(15)) \(.duration_minutes)m"
+    ' "$STATE_FILE" 2>/dev/null
+    echo "───────────────────────────────────────────────────────"
+    jq -r '
+        (.gate_times // []) |
+        (map(.duration_minutes) | add // 0) as $total |
+        "  TOTAL             \($total)m (\($total / 60 * 10 | floor / 10)h)"
+    ' "$STATE_FILE" 2>/dev/null
     echo "═══════════════════════════════════════════════════════"
 }
