@@ -17,11 +17,17 @@ const TOOL_GATE_MAP: Record<string, Gate[]> = {
   MultiEdit: ['IMPLEMENT'],
   NotebookEdit: ['IMPLEMENT'],
 
-  // MCP tools at specific gates
-  mcp__claude_ai_TeamX__teamx_transition_task: ['SELECT', 'EVIDENCE'],
-  mcp__claude_ai_TeamX__teamx_batch_transition_tasks: ['SELECT', 'EVIDENCE'],
-  mcp__claude_ai_TeamX__teamx_satisfy_acceptance_criterion: ['EVIDENCE'],
-  mcp__claude_ai_TeamX__teamx_log_time_entry: ['EVIDENCE'],
+  // MCP TeamX — task lifecycle
+  mcp__teamx__teamx_transition_task: ['SELECT', 'EVIDENCE'],
+  mcp__teamx__teamx_batch_transition_tasks: ['SELECT', 'EVIDENCE'],
+  mcp__teamx__teamx_satisfy_acceptance_criterion: ['EVIDENCE'],
+  mcp__teamx__teamx_log_time_entry: ['EVIDENCE'],
+  mcp__teamx__teamx_push_lessons: ['RETROSPECTIVE'],
+
+  // MCP TeamX — GitLab write operations
+  mcp__teamx__gitlab_create_merge_request: ['MR'],
+  mcp__teamx__gitlab_merge: ['MR', 'MERGE'],
+  mcp__teamx__gitlab_retry_job: ['PIPELINE'],
 };
 
 /** Bash command patterns that require specific gates */
@@ -156,15 +162,14 @@ function checkBashCommand(
 }
 
 /**
- * If a gate is skipped in the current flow variant,
- * the tools that would be used there should be usable
- * in the next non-skipped gate.
+ * Expand allowed gates to account for skipped gates in the current flow variant.
+ * If an allowed gate is skipped, the tool becomes unreachable — which is intentional.
+ * discovery: no git commit/push/MR/merge tools (produces a findings doc instead).
+ * compressed: no PLAN gate tools.
  */
 function expandGatesForVariant(gates: Gate[], flowVariant: string): Gate[] {
-  const skipped = SKIP_GATES[flowVariant];
-  if (!skipped) return gates;
-
-  // If any of the allowed gates are skipped in this variant,
-  // just return as-is — the tool shouldn't be needed either
-  return gates;
+  const skipped = SKIP_GATES[flowVariant] ?? [];
+  if (skipped.length === 0) return gates;
+  // Filter out skipped gates from allowed list — tool is not usable in this variant
+  return gates.filter(g => !skipped.includes(g));
 }

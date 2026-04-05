@@ -2,15 +2,11 @@
 
 Setup en **< 2 minutos** para cualquier dev que se una a TeamX. Instala el delivery OS con enforcement automatico de gates, MCP de la agencia y sistema de experiencia del agente.
 
-## Instalacion (v2 — Plugin)
+## Instalacion
 
-**Recomendado: Claude Code Plugin System**
-```
-/plugin marketplace add https://github.com/teamx-agency/devkit
-/plugin install devkit
-```
+### Opcion A — Script (recomendado, Claude Code + otros tools)
 
-**Fallback: script manual (macOS / Linux)**
+**macOS / Linux:**
 ```bash
 curl -sSL https://raw.githubusercontent.com/teamx-agency/devkit/main/install.sh | bash
 ```
@@ -19,6 +15,33 @@ curl -sSL https://raw.githubusercontent.com/teamx-agency/devkit/main/install.sh 
 ```powershell
 irm https://raw.githubusercontent.com/teamx-agency/devkit/main/install.ps1 | iex
 ```
+
+El script detecta automaticamente las herramientas instaladas y configura:
+- **Skills** — `/teamx-dev`, `/teamx-status`, `/teamx-review`, `/teamx-handoff`, `/teamx-health`
+- **Hooks** — 5 hooks de enforcement descargados a `~/.claude/teamx-devkit/` y registrados en `settings.json` (requiere `node` y `jq`)
+- **MCP TeamX** — agrega `teamx` a Claude Code, Gemini CLI, OpenCode, Codex CLI y Crush si estan instalados
+- **Variable de entorno** — `TEAMX_MCP_URL` en `.bashrc` / `.zshrc`
+
+### Opcion B — Plugin marketplace (Claude Code)
+
+Desde Claude Code, abre el plugin manager con `/plugin` y:
+
+1. Ve a la tab **Marketplaces** → agrega el marketplace de TeamX:
+   ```
+   https://github.com/teamx-agency/devkit
+   ```
+2. Ve a la tab **Discover** → busca `devkit` → instala
+
+> Si el repo es privado o la Opcion B falla, usa la Opcion A — es equivalente.
+
+### Verificar instalacion
+
+Tras instalar, abre Claude Code y ejecuta:
+```
+/teamx-status
+```
+
+Si responde con el dashboard de proyectos activos, la instalacion fue exitosa.
 
 ---
 

@@ -1,5 +1,7 @@
 ---
-description: "Generate or resume a context handoff for mid-task transitions between devs or sessions."
+name: teamx-handoff
+description: "Generate or resume a context handoff for mid-task transitions."
+level: 2
 ---
 
 ## Input
@@ -8,7 +10,6 @@ description: "Generate or resume a context handoff for mid-task transitions betw
 $ARGUMENTS
 ```
 
-Usage:
 - `/teamx-handoff` — Generate handoff for current task
 - `/teamx-handoff resume` — Resume from existing handoff
 
@@ -16,50 +17,15 @@ Usage:
 
 ## Generate Handoff (default)
 
-When a dev is pausing work or another dev/agent will pick up:
-
-1. Verify `.teamx/state.json` exists and has a current task
+1. Verify `.teamx/state.json` exists with current task
 2. Run: `bash .teamx/lib/handoff.sh`
-3. Read the generated `.teamx/handoff.md`
-4. **Enrich the handoff** — the script generates the structural data, but YOU must fill in:
-   - **Decisions Made:** what architectural or implementation decisions were made and WHY
-   - **Open Risks:** what could break, what's uncertain, what needs attention
-   - Write these sections back into `.teamx/handoff.md`
-5. Present the complete handoff to the dev using the Handoff message type from `voice.md`
-6. Confirm: "Handoff saved. Next dev can resume with `/teamx-handoff resume`."
-
----
+3. Read generated `.teamx/handoff.md`
+4. Enrich with: decisions made (and WHY), open risks
+5. Present using Handoff message type from `voice.md`
 
 ## Resume from Handoff
 
-When picking up work from a previous session:
-
-1. Check if `.teamx/handoff.md` exists
-   - If not, inform: "No handoff found. Use `/teamx-dev <PROJECT>` to check state."
-2. Read `.teamx/handoff.md` completely
-3. Read `.teamx/state.json` via `source .teamx/lib/state.sh && print_status`
-4. Present the handoff context:
-   - Task and current gate
-   - What was done, what remains
-   - Decisions made and their rationale
-   - Open risks
-   - Files changed
-5. Ask: "Ready to continue from [gate]? Any questions about the context?"
-6. On confirmation:
-   - Clear handoff: `source .teamx/lib/state.sh && clear_handoff`
-   - Continue from the current gate in the state machine
-
----
-
-## Communication
-
-Use the **Handoff** message type (voice.md type H):
-- Structured, complete, no assumptions
-- Include gate, files touched, decisions with rationale, risks
-
----
-
-## Integration with /teamx-dev
-
-The `/teamx-dev` INIT flow automatically checks for handoff.md and presents it.
-This command is a standalone shortcut for explicit handoff generation and resumption.
+1. Check `.teamx/handoff.md` exists
+2. Read handoff + state via `source .teamx/lib/state.sh && print_status`
+3. Present context: task, gate, what was done, decisions, risks, files changed
+4. On confirmation: `source .teamx/lib/state.sh && clear_handoff`, continue from current gate

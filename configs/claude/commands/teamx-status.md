@@ -1,52 +1,33 @@
-# /teamx-status — Estado Rápido de la Agencia
+---
+name: teamx-status
+description: "Project status dashboard — quick overview of all projects or detailed view of one."
+level: 1
+---
 
-Muestra un dashboard rápido del estado actual de todos los proyectos activos de TeamX.
+## Input
 
-## Uso
-
+```text
+$ARGUMENTS
 ```
-/teamx-status
-/teamx-status [PROJECT-ID]
-```
+
+Usage: `/teamx-status` (global) or `/teamx-status PRJ-001` (project detail)
 
 ---
 
-## Instrucciones para el LLM
+## Without PROJECT-ID — Global View
 
-### Sin PROJECT-ID — Vista global
+1. Call `teamx_list_projects` for all active projects
+2. For each (max 5), call `teamx_list_project_tasks(project_code, status: "in_progress")`
+3. Present dashboard with status indicators
 
-1. Usa `teamx_list_projects` para obtener todos los proyectos activos.
-2. Para cada proyecto activo (máximo 5 más recientes), usa `teamx_list_project_tasks` con `status: ["in_progress"]`.
-3. Presenta el dashboard:
+## With PROJECT-ID — Detailed View
 
-```
-# 🏢 TeamX — Estado de la Agencia
-Actualizado: [timestamp]
+1. Call `teamx_get_project_detail` and `teamx_get_workflow_state` in parallel
+2. Call `gitlab_list_pipelines` for CI/CD state
+3. Present detailed summary with milestones, tasks, pipelines
 
-## Proyectos Activos
+## Notes
 
-### 🟢 [Proyecto 1] — [Cliente]
-Milestone: [nombre] ([X]% completado)
-En progreso: [N] tareas | Blockers: [N]
-
-### 🟡 [Proyecto 2] — [Cliente]  
-Milestone: [nombre] ([X]% completado)
-En progreso: [N] tareas | Blockers: [N]
-
-### 🔴 [Proyecto 3] — [Cliente] ⚠️ Blocker detectado
-[descripción del blocker]
-```
-
-### Con PROJECT-ID — Vista detallada del proyecto
-
-1. Usa `teamx_get_project_detail` con el PROJECT-ID.
-2. Usa `teamx_get_workflow_state` para el estado del agente.
-3. Usa `gitlab_list_pipelines` para el estado de CI/CD.
-4. Presenta resumen detallado con pipelines, MRs abiertos y tareas.
-
----
-
-## Notas
-
-- Usa indicadores visuales: 🟢 en tiempo, 🟡 con riesgo, 🔴 con bloqueo.
-- Si no hay proyectos activos, indica que todos están completados o en pausa.
+- Use indicators: GREEN (on track), YELLOW (at risk), RED (blocked)
+- If no active projects, indicate all completed or paused
+- Read-only — does NOT modify state

@@ -53,9 +53,15 @@ if (HasCommand "claude") {
     Ok "Claude Code — claude.json creado"
   }
 
-  Fetch "$DEVKIT_BASE/configs/claude/commands/teamx-dev.md"    "$commandDir\teamx-dev.md"
-  Fetch "$DEVKIT_BASE/configs/claude/commands/teamx-status.md" "$commandDir\teamx-status.md"
-  Ok "Claude Code — comandos /teamx-dev y /teamx-status instalados"
+  Fetch "$DEVKIT_BASE/skills/teamx-dev/SKILL.md"     "$commandDir\teamx-dev.md"
+  Fetch "$DEVKIT_BASE/skills/teamx-status/SKILL.md"  "$commandDir\teamx-status.md"
+  Fetch "$DEVKIT_BASE/skills/teamx-review/SKILL.md"  "$commandDir\teamx-review.md"
+  Fetch "$DEVKIT_BASE/skills/teamx-handoff/SKILL.md" "$commandDir\teamx-handoff.md"
+  Fetch "$DEVKIT_BASE/skills/teamx-health/SKILL.md"  "$commandDir\teamx-health.md"
+  # Remove v2 legacy command if present
+  $legacyV2 = "$commandDir\teamx-dev-v2.md"
+  if (Test-Path $legacyV2) { Remove-Item $legacyV2 -Force }
+  Ok "Claude Code — comandos /teamx-dev, /teamx-status, /teamx-review, /teamx-handoff, /teamx-health instalados"
 } else {
   Skip "Claude Code"
 }
@@ -161,8 +167,9 @@ Write-Host ""
 Write-Host "  MCP TeamX activo en todas las tools detectadas."
 Write-Host ""
 Write-Host "  Comandos disponibles:" -ForegroundColor Green
-Write-Host "  → En Claude Code / OpenCode: " -NoNewline
-Write-Host "/teamx-dev PROJECT-ID" -ForegroundColor Cyan
-Write-Host "  → En Claude Code / OpenCode: " -NoNewline
-Write-Host "/teamx-status" -ForegroundColor Cyan
+Write-Host "  → " -NoNewline; Write-Host "/teamx-dev PROJECT-ID" -ForegroundColor Cyan -NoNewline; Write-Host "      — Ciclo autonomo (state machine)"
+Write-Host "  → " -NoNewline; Write-Host "/teamx-status" -ForegroundColor Cyan -NoNewline; Write-Host "              — Dashboard de proyectos"
+Write-Host "  → " -NoNewline; Write-Host "/teamx-review MR-IID" -ForegroundColor Cyan -NoNewline; Write-Host "       — Code review estructurado"
+Write-Host "  → " -NoNewline; Write-Host "/teamx-handoff" -ForegroundColor Cyan -NoNewline; Write-Host "             — Handoff de contexto"
+Write-Host "  → " -NoNewline; Write-Host "/teamx-health PROJECT-ID" -ForegroundColor Cyan -NoNewline; Write-Host "   — Auditoria de salud"
 Write-Host ""

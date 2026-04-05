@@ -24,8 +24,8 @@ echo "  LESSONS v2 — Analyzing journal data"
 echo "═══════════════════════════════════════════════════════"
 echo ""
 
-JOURNAL_FILES=$(find "$JOURNAL_DIR" -name "task-*.json" 2>/dev/null | sort)
-TASK_COUNT=$(echo "$JOURNAL_FILES" | grep -c "task-" 2>/dev/null || echo 0)
+readarray -t JOURNAL_ARRAY < <(find "$JOURNAL_DIR" -name "task-*.json" 2>/dev/null | sort)
+TASK_COUNT=${#JOURNAL_ARRAY[@]}
 
 if [ "$TASK_COUNT" -eq 0 ]; then
     echo "  No journal entries found. Nothing to analyze."
@@ -46,7 +46,7 @@ fi
 echo "  Analyzing $TASK_COUNT journal entries..."
 
 # Aggregate all journal files into a single array
-ALL_JOURNALS=$(jq -s '.' $JOURNAL_FILES)
+ALL_JOURNALS=$(jq -s '.' "${JOURNAL_ARRAY[@]}")
 
 # ─── Standard metrics (v1 compat) ────────────────────────────────────────────
 

@@ -29,7 +29,8 @@ json_merge_mcp() {
   if command -v jq &>/dev/null && [ -f "$file" ]; then
     jq --arg url "$MCP_URL" \
       '.mcpServers.teamx = {"type": "url", "url": $url}' \
-      "$file" > "${file}.tmp" && mv "${file}.tmp" "$file"
+      "$file" > "${file}.tmp" || { rm -f "${file}.tmp"; warn "Failed to update $file"; return 1; }
+    mv "${file}.tmp" "$file"
   fi
 }
 
@@ -49,8 +50,8 @@ CONF
 }
 
 write_claude_cmd_teamx_dev() {
-  # Download full command from GitHub; fallback to minimal inline version
-  curl -sSL https://raw.githubusercontent.com/teamx-agency/devkit/main/configs/claude/commands/teamx-dev.md 2>/dev/null && return
+  # skills/ is the source of truth; configs/claude/commands/ is kept in sync as mirror
+  curl -sSL https://raw.githubusercontent.com/teamx-agency/devkit/main/skills/teamx-dev/SKILL.md 2>/dev/null && return
   cat <<'CONF'
 ---
 description: "TeamX delivery OS — state machine with classification, planning, quality gates, and agent persona."
@@ -295,7 +296,7 @@ CONF
 }
 
 write_claude_cmd_teamx_status() {
-  curl -sSL https://raw.githubusercontent.com/teamx-agency/devkit/main/configs/claude/commands/teamx-status.md 2>/dev/null && return
+  curl -sSL https://raw.githubusercontent.com/teamx-agency/devkit/main/skills/teamx-status/SKILL.md 2>/dev/null && return
   cat <<'CONF'
 # /teamx-status — Estado Rápido de la Agencia
 
@@ -355,7 +356,7 @@ CONF
 write_claude_cmd_teamx_review() {
   # Content fetched from configs/claude/commands/teamx-review.md at build time
   # For now, download from GitHub during install
-  curl -sSL https://raw.githubusercontent.com/teamx-agency/devkit/main/configs/claude/commands/teamx-review.md 2>/dev/null || cat <<'CONF'
+  curl -sSL https://raw.githubusercontent.com/teamx-agency/devkit/main/skills/teamx-review/SKILL.md 2>/dev/null || cat <<'CONF'
 ---
 description: "Structured code review for a GitLab MR with criteria mapping and risk assessment."
 ---
@@ -373,7 +374,7 @@ CONF
 }
 
 write_claude_cmd_teamx_handoff() {
-  curl -sSL https://raw.githubusercontent.com/teamx-agency/devkit/main/configs/claude/commands/teamx-handoff.md 2>/dev/null || cat <<'CONF'
+  curl -sSL https://raw.githubusercontent.com/teamx-agency/devkit/main/skills/teamx-handoff/SKILL.md 2>/dev/null || cat <<'CONF'
 ---
 description: "Generate or resume a context handoff for mid-task transitions."
 ---
@@ -390,7 +391,7 @@ CONF
 }
 
 write_claude_cmd_teamx_health() {
-  curl -sSL https://raw.githubusercontent.com/teamx-agency/devkit/main/configs/claude/commands/teamx-health.md 2>/dev/null || cat <<'CONF'
+  curl -sSL https://raw.githubusercontent.com/teamx-agency/devkit/main/skills/teamx-health/SKILL.md 2>/dev/null || cat <<'CONF'
 ---
 description: "Audit operational health of a TeamX project."
 ---
@@ -532,7 +533,9 @@ if [ "$HAS_CLAUDE" = "1" ]; then
 
   CLAUDE_CFG_DIR="$HOME/.claude"
   CLAUDE_CFG="$CLAUDE_CFG_DIR/claude.json"
+  CLAUDE_SETTINGS="$CLAUDE_CFG_DIR/settings.json"
   CLAUDE_CMD_DIR="$CLAUDE_CFG_DIR/commands"
+  DEVKIT_DIR="$CLAUDE_CFG_DIR/teamx-devkit"
   mkdir -p "$CLAUDE_CMD_DIR"
 
   # MCP: merge si ya existe config, crear si no
@@ -550,9 +553,79 @@ if [ "$HAS_CLAUDE" = "1" ]; then
   write_claude_cmd_teamx_review  > "$CLAUDE_CMD_DIR/teamx-review.md"
   write_claude_cmd_teamx_handoff > "$CLAUDE_CMD_DIR/teamx-handoff.md"
   write_claude_cmd_teamx_health  > "$CLAUDE_CMD_DIR/teamx-health.md"
-  # Limpiar comando v2 anterior si existe
   rm -f "$CLAUDE_CMD_DIR/teamx-dev-v2.md"
   ok "Claude Code — comandos /teamx-dev, /teamx-status, /teamx-review, /teamx-handoff, /teamx-health instalados"
+
+  # Hooks — gate enforcement (requiere node)
+  if command -v node &>/dev/null && command -v jq &>/dev/null; then
+    log "Claude Code — instalando hooks de enforcement..."
+
+    # Descargar runtime de hooks a ~/.claude/teamx-devkit/
+    mkdir -p "$DEVKIT_DIR/scripts/lib" \
+             "$DEVKIT_DIR/dist/hooks"
+
+    GHRAW="https://raw.githubusercontent.com/teamx-agency/devkit/main"
+
+    # Scripts entry points
+    for f in run.cjs pre-tool-gate.mjs stop-guard.mjs session-start.mjs pre-compact-save.mjs post-tool-state.mjs; do
+      curl -sSL "$GHRAW/scripts/$f" -o "$DEVKIT_DIR/scripts/$f" 2>/dev/null || warn "No se pudo descargar scripts/$f"
+    done
+    curl -sSL "$GHRAW/scripts/lib/stdin.mjs" -o "$DEVKIT_DIR/scripts/lib/stdin.mjs" 2>/dev/null || warn "No se pudo descargar scripts/lib/stdin.mjs"
+
+    # Compiled TypeScript (dist/)
+    for f in index.js state-reader.js gate-rules.js; do
+      curl -sSL "$GHRAW/dist/$f" -o "$DEVKIT_DIR/dist/$f" 2>/dev/null || warn "No se pudo descargar dist/$f"
+    done
+    for f in pre-tool-gate.js stop-guard.js session-start.js pre-compact-save.js post-tool-state.js; do
+      curl -sSL "$GHRAW/dist/hooks/$f" -o "$DEVKIT_DIR/dist/hooks/$f" 2>/dev/null || warn "No se pudo descargar dist/hooks/$f"
+    done
+
+    # Merge hooks en settings.json
+    HOOK_CMD_PREFIX="node \"$DEVKIT_DIR/scripts/run.cjs\" \"$DEVKIT_DIR/scripts"
+    MERGED_SETTINGS=$(jq \
+      --arg se  "$HOOK_CMD_PREFIX/session-start.mjs\"" \
+      --arg pre "$HOOK_CMD_PREFIX/pre-tool-gate.mjs\"" \
+      --arg post "$HOOK_CMD_PREFIX/post-tool-state.mjs\"" \
+      --arg cmp "$HOOK_CMD_PREFIX/pre-compact-save.mjs\"" \
+      --arg stp "$HOOK_CMD_PREFIX/stop-guard.mjs\"" \
+      '
+      def add_hook(event; cmd; timeout):
+        .hooks[event] //= [] |
+        if (.hooks[event] | map(select(.hooks[0].command == cmd)) | length) == 0 then
+          .hooks[event] += [{"hooks": [{"type": "command", "command": cmd, "timeout": timeout}]}]
+        else . end;
+      add_hook("SessionStart"; $se;  5) |
+      add_hook("PreToolUse";   $pre; 3) |
+      add_hook("PostToolUse";  $post; 3) |
+      add_hook("PreCompact";   $cmp; 5) |
+      add_hook("Stop";         $stp; 5)
+      ' "${CLAUDE_SETTINGS}" 2>/dev/null || \
+      jq -n \
+        --arg se  "$HOOK_CMD_PREFIX/session-start.mjs\"" \
+        --arg pre "$HOOK_CMD_PREFIX/pre-tool-gate.mjs\"" \
+        --arg post "$HOOK_CMD_PREFIX/post-tool-state.mjs\"" \
+        --arg cmp "$HOOK_CMD_PREFIX/pre-compact-save.mjs\"" \
+        --arg stp "$HOOK_CMD_PREFIX/stop-guard.mjs\"" \
+        '{
+          hooks: {
+            SessionStart: [{"hooks": [{"type": "command", "command": $se,  "timeout": 5}]}],
+            PreToolUse:   [{"hooks": [{"type": "command", "command": $pre, "timeout": 3}]}],
+            PostToolUse:  [{"hooks": [{"type": "command", "command": $post,"timeout": 3}]}],
+            PreCompact:   [{"hooks": [{"type": "command", "command": $cmp, "timeout": 5}]}],
+            Stop:         [{"hooks": [{"type": "command", "command": $stp, "timeout": 5}]}]
+          }
+        }')
+
+    if [ -n "$MERGED_SETTINGS" ]; then
+      echo "$MERGED_SETTINGS" > "$CLAUDE_SETTINGS"
+      ok "Claude Code — 5 hooks de enforcement instalados en settings.json"
+    else
+      warn "No se pudo actualizar settings.json — instala manualmente desde hooks/hooks.json"
+    fi
+  else
+    warn "node o jq no encontrado — hooks NO instalados (gates sin enforcement automatico)"
+  fi
+
 else
   skip "Claude Code"
 fi
@@ -564,11 +637,15 @@ log "Google Antigravity → instalando..."
 
 ANTIGRAVITY_DIR="$HOME/.gemini/antigravity"
 mkdir -p "$ANTIGRAVITY_DIR"
-write_antigravity_mcp    > "$ANTIGRAVITY_DIR/mcp_config.json"
+write_antigravity_mcp > "$ANTIGRAVITY_DIR/mcp_config.json"
 ok "Antigravity — mcp_config.json instalado en ~/.gemini/antigravity/"
 
-write_antigravity_agents > "$HOME/AGENTS.md"
-ok "Antigravity — AGENTS.md global instalado en ~/"
+if [ -f "$HOME/AGENTS.md" ]; then
+  warn "AGENTS.md ya existe en ~/. No se sobreescribio. Agrega manualmente si es necesario."
+else
+  write_antigravity_agents > "$HOME/AGENTS.md"
+  ok "Antigravity — AGENTS.md global instalado en ~/"
+fi
 
 echo ""
 
@@ -583,7 +660,8 @@ if [ "$HAS_OPENCODE" = "1" ]; then
   if [ -f "$OPENCODE_CFG" ] && command -v jq &>/dev/null; then
     jq --arg url "$MCP_URL" \
       '.mcp.teamx = {"type": "remote", "url": $url, "enabled": true}' \
-      "$OPENCODE_CFG" > "${OPENCODE_CFG}.tmp" && mv "${OPENCODE_CFG}.tmp" "$OPENCODE_CFG"
+      "$OPENCODE_CFG" > "${OPENCODE_CFG}.tmp" || { rm -f "${OPENCODE_CFG}.tmp"; warn "Failed to update opencode.json"; }
+    [ -f "${OPENCODE_CFG}.tmp" ] && mv "${OPENCODE_CFG}.tmp" "$OPENCODE_CFG"
     ok "OpenCode — MCP merged en opencode.json existente"
   else
     write_opencode_json > "$OPENCODE_CFG"

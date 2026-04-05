@@ -31,11 +31,11 @@ export interface PostToolOutput {
 
 /** Tools that trigger state re-injection */
 const STATE_TRIGGER_TOOLS = new Set([
-  'mcp__claude_ai_TeamX__teamx_get_workflow_state',
-  'mcp__claude_ai_TeamX__teamx_get_task_detail',
-  'mcp__claude_ai_TeamX__teamx_transition_task',
-  'mcp__claude_ai_TeamX__teamx_batch_transition_tasks',
-  'mcp__claude_ai_TeamX__teamx_satisfy_acceptance_criterion',
+  'mcp__teamx__teamx_get_workflow_state',
+  'mcp__teamx__teamx_get_task_detail',
+  'mcp__teamx__teamx_transition_task',
+  'mcp__teamx__teamx_batch_transition_tasks',
+  'mcp__teamx__teamx_satisfy_acceptance_criterion',
 ]);
 
 export function handlePostToolUse(data: PostToolInput): PostToolOutput {
@@ -63,41 +63,31 @@ export function handlePostToolUse(data: PostToolInput): PostToolOutput {
 
   const messages: string[] = [];
 
-  // After workflow state or task detail: remind to use get_task_detail
-  if (toolName === 'mcp__claude_ai_TeamX__teamx_get_workflow_state') {
+  // After workflow state: remind to call get_task_detail for full criteria
+  if (toolName === 'mcp__teamx__teamx_get_workflow_state') {
     if (state.current_task) {
       messages.push(
-        `[TeamX] Task selected: "${state.current_task.title}" (${state.current_task.uuid}). ` +
-        `Use teamx_get_task_detail for full description and acceptance criteria.`
+        `[TeamX] Task in state: "${state.current_task.title}" (${state.current_task.uuid}). ` +
+        `Call teamx_get_task_detail for full description and acceptance criteria.`
       );
     }
   }
 
-  // After get_task_detail: warn about missing criteria (only for non-chore tasks outside Setup/Foundational milestones)
-  if (toolName === 'mcp__claude_ai_TeamX__teamx_get_task_detail') {
+  // After get_task_detail: warn if criteria are missing (chores are exempt)
+  if (toolName === 'mcp__teamx__teamx_get_task_detail') {
     const output = data.tool_output || data.toolOutput || '';
-    if (output.includes('"criteria_status":"missing"') || output.includes('"criteria_status": "missing"')) {
-      // Check if this is a chore/setup task where criteria are optional
-      const isSetupMilestone = /\"milestone\"\s*:\s*\"(Setup|Foundational|Integration & Testing|Documentation & Deployment)\"/i.test(output)
-        || (!/\"milestone\"\s*:\s*\"User Story/i.test(output) && /\"milestone\"\s*:\s*\"[^"]+\"/.test(output));
-      const workType = state.current_task?.work_type;
-      const isChore = workType === 'chore';
-
-      if (!isSetupMilestone && !isChore) {
-        messages.push(
-          `[TeamX WARNING] This task has no acceptance criteria (criteria_status: "missing"). ` +
-          `Flag this as a blocker during CLASSIFY — readiness should be "needs_refinement".`
-        );
-      } else {
-        messages.push(
-          `[TeamX INFO] This task has no acceptance criteria, but criteria are optional for ${isSetupMilestone ? 'Setup/Foundational' : 'chore'} tasks.`
-        );
-      }
+    const criteriaMissing = output.includes('"criteria_status":"missing"') ||
+                            output.includes('"criteria_status": "missing"');
+    if (criteriaMissing && state.current_task?.work_type !== 'chore') {
+      messages.push(
+        `[TeamX WARNING] Task has no acceptance criteria. ` +
+        `Set readiness to "needs_refinement" in CLASSIFY and post a blocker.`
+      );
     }
   }
 
-  // After state.sh or transition: inject updated summary
-  if (isStateShCall || toolName === 'mcp__claude_ai_TeamX__teamx_transition_task') {
+  // After state.sh or transition: inject updated state summary
+  if (isStateShCall || toolName === 'mcp__teamx__teamx_transition_task') {
     const summary = buildStateSummary(state);
     messages.push(`[TeamX State Updated]\n${summary}`);
   }
