@@ -56,7 +56,8 @@ ALL_SCRIPTS=$(grep -E '^\s*(script:|[-]\s+)' "$CI_FILE" \
     | sed 's/^\s*script:\s*//; s/^\s*-\s*//; s/^["'"'"']//; s/["'"'"']$//' \
     | sed 's/^\s*//; s/\s*$//' \
     | grep -v '^\s*$' \
-    | sort -u)
+    | sort -u \
+    || true)
 
 # =============================================================================
 # Step 2: Classify into CHECK commands vs SKIP commands
@@ -85,15 +86,16 @@ while IFS= read -r line; do
             | tr '[:upper:]' '[:lower:]' \
             | sed 's/\s\+/-/g' \
             | sed 's/vendor\/bin\///' \
-            | sed 's/run-//')
+            | sed 's/run-//' \
+            || true)
         [ -z "$NAME" ] && NAME=$(echo "$line" | awk '{print $1}' | sed 's/.*\///')
 
         # Derive stage
         STAGE="check"
-        echo "$line" | grep -qiE 'lint|format|cs-fixer|phpcs|eslint|stylelint|rubocop|flake8|ruff|black|pylint|clippy|vet|golangci' && STAGE="lint"
-        echo "$line" | grep -qiE 'test|spec|jest|vitest|mocha|pytest|rspec|phpunit|cypress|playwright|cargo\s+test|go\s+test' && STAGE="test"
-        echo "$line" | grep -qiE 'build|tsc|compile' && STAGE="build"
-        echo "$line" | grep -qiE 'audit|snyk|analyse|analyze|phpstan|mypy' && STAGE="analyse"
+        echo "$line" | grep -qiE 'lint|format|cs-fixer|phpcs|eslint|stylelint|rubocop|flake8|ruff|black|pylint|clippy|vet|golangci' && STAGE="lint" || true
+        echo "$line" | grep -qiE 'test|spec|jest|vitest|mocha|pytest|rspec|phpunit|cypress|playwright|cargo\s+test|go\s+test' && STAGE="test" || true
+        echo "$line" | grep -qiE 'build|tsc|compile' && STAGE="build" || true
+        echo "$line" | grep -qiE 'audit|snyk|analyse|analyze|phpstan|mypy' && STAGE="analyse" || true
 
         CHECKS=$(echo "$CHECKS" | jq \
             --arg name "$NAME" \
@@ -109,23 +111,23 @@ done <<< "$ALL_SCRIPTS"
 STACK_HINTS="[]"
 
 grep -qiE 'php|composer|laravel|symfony|medusa' "$CI_FILE" && \
-    STACK_HINTS=$(echo "$STACK_HINTS" | jq '. + ["php"]')
+    STACK_HINTS=$(echo "$STACK_HINTS" | jq '. + ["php"]') || true
 grep -qiE 'node|npm|yarn|pnpm|javascript|typescript|next|nuxt|vite' "$CI_FILE" && \
-    STACK_HINTS=$(echo "$STACK_HINTS" | jq '. + ["node"]')
+    STACK_HINTS=$(echo "$STACK_HINTS" | jq '. + ["node"]') || true
 grep -qiE 'python|pip|pytest|django|flask|fastapi' "$CI_FILE" && \
-    STACK_HINTS=$(echo "$STACK_HINTS" | jq '. + ["python"]')
+    STACK_HINTS=$(echo "$STACK_HINTS" | jq '. + ["python"]') || true
 grep -qiE '\bgo\b|golang|golangci' "$CI_FILE" && \
-    STACK_HINTS=$(echo "$STACK_HINTS" | jq '. + ["go"]')
+    STACK_HINTS=$(echo "$STACK_HINTS" | jq '. + ["go"]') || true
 grep -qiE 'rust|cargo' "$CI_FILE" && \
-    STACK_HINTS=$(echo "$STACK_HINTS" | jq '. + ["rust"]')
+    STACK_HINTS=$(echo "$STACK_HINTS" | jq '. + ["rust"]') || true
 grep -qiE 'ruby|gem|rspec|rubocop|bundle' "$CI_FILE" && \
-    STACK_HINTS=$(echo "$STACK_HINTS" | jq '. + ["ruby"]')
+    STACK_HINTS=$(echo "$STACK_HINTS" | jq '. + ["ruby"]') || true
 grep -qiE 'docker' "$CI_FILE" && \
-    STACK_HINTS=$(echo "$STACK_HINTS" | jq '. + ["docker"]')
+    STACK_HINTS=$(echo "$STACK_HINTS" | jq '. + ["docker"]') || true
 grep -qiE 'redis' "$CI_FILE" && \
-    STACK_HINTS=$(echo "$STACK_HINTS" | jq '. + ["redis"]')
+    STACK_HINTS=$(echo "$STACK_HINTS" | jq '. + ["redis"]') || true
 grep -qiE 'mysql|mariadb|postgres|mongodb' "$CI_FILE" && \
-    STACK_HINTS=$(echo "$STACK_HINTS" | jq '. + ["database"]')
+    STACK_HINTS=$(echo "$STACK_HINTS" | jq '. + ["database"]') || true
 
 # =============================================================================
 # Step 4: Write ci-profile.json

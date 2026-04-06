@@ -178,7 +178,7 @@ GATE_BOTTLENECKS=$(echo "$GATE_CYCLE_TIMES" | jq '
         signal: ("SLOW_GATE_" + .gate),
         pattern: ("Gate " + .gate + " avg " + (.avg_minutes | tostring) + "min — above threshold"),
         suggested_sdd_action: (
-            if .gate == "PLAN" then "SDD lacks enough detail — PLAN shouldn't be longer than IMPLEMENT"
+            if .gate == "PLAN" then "SDD lacks enough detail — PLAN should not be longer than IMPLEMENT"
             elif .gate == "IMPLEMENT" then "Task scope too large — split into smaller tasks"
             elif .gate == "VERIFY" then "CI failures are frequent — review acceptance criteria clarity"
             elif .gate == "REVIEW" then "QA review is blocking — consider async review protocol"

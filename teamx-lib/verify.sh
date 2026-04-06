@@ -82,7 +82,7 @@ while IFS= read -r check; do
     set -e
 
     # Extract summary (last meaningful line)
-    SUMMARY=$(echo "$OUTPUT" | grep -E "OK|error|Error|FAIL|fail|success|compiled|written|Found [0-9]" | tail -1 | sed 's/\x1b\[[0-9;]*m//g' | xargs)
+    SUMMARY=$(echo "$OUTPUT" | grep -E "OK|error|Error|FAIL|fail|success|compiled|written|Found [0-9]|pass|Pass|suites" | tail -1 | sed 's/\x1b\[[0-9;]*m//g' | xargs || true)
     [ -z "$SUMMARY" ] && SUMMARY=$(echo "$OUTPUT" | tail -1 | sed 's/\x1b\[[0-9;]*m//g' | xargs)
 
     if [ $EXIT_CODE -eq 0 ]; then

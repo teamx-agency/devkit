@@ -287,11 +287,11 @@ set_work_type() {
 }
 
 set_readiness() {
-    local status="$1"
+    local readiness_val="$1"
     local tmp
     tmp=$(mktemp)
-    jq --arg s "$status" '.current_task.readiness = $s' "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
-    echo "READINESS → $status"
+    jq --arg s "$readiness_val" '.current_task.readiness = $s' "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
+    echo "READINESS → $readiness_val"
 }
 
 # =============================================================================
@@ -395,10 +395,10 @@ set_mr_created() {
 }
 
 set_pipeline_status() {
-    local pipeline_id="$1" status="$2"
+    local pipeline_id="$1" pipeline_status="$2"
     local tmp
     tmp=$(mktemp)
-    jq --arg p "$pipeline_id" --arg s "$status" '
+    jq --arg p "$pipeline_id" --arg s "$pipeline_status" '
         .current_task.git.pipeline_id = ($p | tonumber) |
         .current_task.git.pipeline_status = $s
     ' "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
