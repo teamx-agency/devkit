@@ -1,7 +1,6 @@
 ---
 name: teamx-health
 description: "Audit operational health of a TeamX project — tasks, pipelines, branches, milestones."
-level: 2
 ---
 
 ## Input

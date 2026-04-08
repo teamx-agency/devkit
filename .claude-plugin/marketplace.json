@@ -1,26 +1,19 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "teamx-devkit",
-  "description": "TeamX Delivery OS — Hook-enforced state machine with quality gates for Claude Code",
   "owner": {
     "name": "TeamX Agency"
+  },
+  "metadata": {
+    "description": "TeamX Delivery OS — Hook-enforced state machine with quality gates for Claude Code",
+    "version": "2.0.0"
   },
   "plugins": [
     {
       "name": "devkit",
       "description": "Deterministic delivery workflow with 14 gates, automatic enforcement via hooks, agent persona, and TeamX MCP integration.",
-      "version": "2.0.0",
-      "author": {
-        "name": "TeamX Agency"
-      },
       "source": "./",
-      "category": "productivity",
-      "tags": [
-        "delivery",
-        "state-machine",
-        "quality-gates",
-        "teamx"
-      ],
+      "strict": false,
       "skills": [
         "./skills/teamx-dev",
         "./skills/teamx-handoff",
@@ -29,6 +22,5 @@
         "./skills/teamx-status"
       ]
     }
-  ],
-  "version": "2.0.0"
+  ]
 }

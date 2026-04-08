@@ -1,7 +1,6 @@
 ---
 name: teamx-handoff
 description: "Generate or resume a context handoff for mid-task transitions."
-level: 2
 ---
 
 ## Input

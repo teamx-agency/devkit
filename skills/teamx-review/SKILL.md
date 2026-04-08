@@ -1,7 +1,6 @@
 ---
 name: teamx-review
 description: "Structured code review for a GitLab MR with criteria mapping and risk assessment."
-level: 2
 ---
 
 ## Input

@@ -1,7 +1,6 @@
 ---
 name: teamx-status
 description: "Project status dashboard — quick overview of all projects or detailed view of one."
-level: 1
 ---
 
 ## Input
