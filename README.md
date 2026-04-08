@@ -6,32 +6,25 @@ Setup en **< 2 minutos** para cualquier dev que se una a TeamX. Instala el deliv
 
 ## Instalacion
 
-### Opcion A — Script (Claude Code + otros tools)
-
-**macOS / Linux:**
-```bash
-curl -sSL https://raw.githubusercontent.com/teamx-agency/devkit/main/install.sh | bash
-```
-
-**Windows (PowerShell):**
-```powershell
-irm https://raw.githubusercontent.com/teamx-agency/devkit/main/install.ps1 | iex
-```
-
-El script detecta automaticamente las herramientas instaladas y configura:
-- **Skills** — `/teamx-dev`, `/teamx-status`, `/teamx-review`, `/teamx-handoff`, `/teamx-health`
-- **Hooks** — 5 hooks de enforcement descargados a `~/.claude/teamx-devkit/` y registrados en `settings.json` (requiere `node` y `jq`)
-- **MCP TeamX** — agrega `teamx` a Claude Code, Gemini CLI, OpenCode, Codex CLI y Crush si estan instalados
-- **Variable de entorno** — `TEAMX_MCP_URL` en `.bashrc` / `.zshrc`
-
-### Opcion B — Plugin marketplace (Claude Code)
+### Claude Code — Plugin Manager
 
 Desde Claude Code, abre el plugin manager con `/plugin`:
 
 1. Tab **Marketplaces** → agrega: `https://github.com/teamx-agency/devkit`
 2. Tab **Discover** → busca `devkit` → instala
 
-> Si el repo es privado o esta opcion falla, usa la Opcion A.
+El plugin instala automaticamente:
+- **Skills** — `/teamx-dev`, `/teamx-status`, `/teamx-review`, `/teamx-handoff`, `/teamx-health`
+- **Hooks** — 5 hooks de enforcement registrados via `hooks/hooks.json`
+- **MCP TeamX** — servidor `teamx` disponible en todas las sesiones
+
+### Otros tools (Antigravity, OpenCode, Codex, Crush)
+
+```bash
+curl -sSL https://raw.githubusercontent.com/teamx-agency/devkit/main/install.sh | bash
+```
+
+Configura el MCP de TeamX en las herramientas detectadas.
 
 ### Verificar instalacion
 
@@ -339,9 +332,8 @@ teamx-devkit/
 │   ├── health.sh            <- Auditoria de salud local
 │   ├── lessons.sh           <- Extrae patrones de journals
 │   └── persona.yaml, modes.yaml, rituals.yaml, voice.md, work_types.yaml
-├── configs/                 <- MCP configs para otros tools (mirror de skills/)
-├── install.sh               <- Installer macOS/Linux
-├── install.ps1              <- Installer Windows
+├── configs/                 <- MCP configs para otros tools (Antigravity, OpenCode, Codex, Crush)
+├── install.sh               <- MCP installer para Antigravity, OpenCode, Codex, Crush
 ├── package.json
 └── tsconfig.json
 ```
@@ -355,7 +347,4 @@ npm install       # instalar dependencias
 npm run build     # compilar TypeScript → dist/
 ```
 
-Despues de editar cualquier skill: sincronizar `configs/claude/commands/`:
-```bash
-cp skills/teamx-dev/SKILL.md configs/claude/commands/teamx-dev.md
-```
+`skills/` es la fuente de verdad para los skills. Los hooks se compilan de `src/` a `dist/` con `npm run build`.

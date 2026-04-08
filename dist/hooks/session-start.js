@@ -1,0 +1,136 @@
+/**
+ * SessionStart Hook: State Restoration
+ *
+ * Reads .teamx/state.json on session start and injects
+ * the current state summary into the agent's context.
+ * Also loads handoff and lessons if available.
+ */
+import { existsSync, readFileSync } from 'fs';
+import { join } from 'path';
+import { readState, buildStateSummary } from '../state-reader.js';
+/**
+ * Resolve the base directory for experience files (persona.yaml, modes.yaml, voice.md).
+ * Resolution order:
+ *   1. Project's .teamx/ — per-project customization (set up by INIT)
+ *   2. $CLAUDE_PLUGIN_ROOT/teamx-lib/ — plugin install method
+ *   3. ~/.claude/teamx-devkit/teamx-lib/ — install.sh method
+ */
+function resolveExperienceBase(cwd) {
+    const candidates = [
+        join(cwd, '.teamx'),
+        ...(process.env.CLAUDE_PLUGIN_ROOT ? [join(process.env.CLAUDE_PLUGIN_ROOT, 'teamx-lib')] : []),
+        join(process.env.HOME || '', '.claude', 'teamx-devkit', 'teamx-lib'),
+    ];
+    for (const base of candidates) {
+        if (existsSync(join(base, 'persona.yaml')) ||
+            existsSync(join(base, 'modes.yaml')) ||
+            existsSync(join(base, 'voice.md'))) {
+            return base;
+        }
+    }
+    return null;
+}
+export function handleSessionStart(data) {
+    const cwd = data.cwd || data.directory || process.cwd();
+    const state = readState(cwd);
+    if (!state || state.current_gate === 'IDLE') {
+        return { continue: true, suppressOutput: true };
+    }
+    const messages = [];
+    // State summary
+    const summary = buildStateSummary(state);
+    messages.push(`[TeamX State Restored]\n${summary}`);
+    // Handoff context
+    const handoffPath = join(cwd, '.teamx', 'handoff.md');
+    if (existsSync(handoffPath)) {
+        try {
+            const handoff = readFileSync(handoffPath, 'utf-8').trim();
+            if (handoff) {
+                messages.push(`[TeamX Handoff]\n${handoff}`);
+            }
+        }
+        catch { /* ignore */ }
+    }
+    // Local lessons
+    const lessonsPath = join(cwd, '.teamx', 'lessons.json');
+    if (existsSync(lessonsPath)) {
+        try {
+            const lessons = JSON.parse(readFileSync(lessonsPath, 'utf-8'));
+            if (lessons?.patterns?.length > 0) {
+                const top = lessons.patterns.slice(0, 3)
+                    .map((p) => `- ${p}`)
+                    .join('\n');
+                messages.push(`[TeamX Lessons — Local]\n${top}`);
+            }
+        }
+        catch { /* ignore */ }
+    }
+    // Shared lessons (from teamx_get_shared_lessons, saved at last INIT)
+    const sharedPath = join(cwd, '.teamx', 'shared-lessons.json');
+    if (existsSync(sharedPath)) {
+        try {
+            const shared = JSON.parse(readFileSync(sharedPath, 'utf-8'));
+            const signals = shared?.shared_lessons ?? [];
+            if (signals.length > 0) {
+                const top = signals.slice(0, 3)
+                    .map(s => `- [${s.gate}] ${s.pattern} (seen ${s.frequency}x across team)`)
+                    .join('\n');
+                messages.push(`[TeamX Shared Lessons — Team]\n${top}`);
+            }
+        }
+        catch { /* ignore */ }
+    }
+    // Engram memory layer — inject instructions if available (graceful degradation)
+    const engramStatusPath = join(cwd, '.teamx', 'engram-status.json');
+    if (existsSync(engramStatusPath)) {
+        try {
+            const engramStatus = JSON.parse(readFileSync(engramStatusPath, 'utf-8'));
+            if (engramStatus?.available === true) {
+                messages.push(`[Engram Memory Available]\n` +
+                    `Persistent cross-session memory is active for this project.\n` +
+                    `→ At INIT: bash .teamx/lib/engram.sh import, then call get_context(layers=["project","architecture","recent-decisions"])\n` +
+                    `→ During IMPLEMENT: call save_observation when the human corrects your approach (most important capture point)\n` +
+                    `→ At EVIDENCE: call save_observation(layer="completed-work") with delivery summary\n` +
+                    `→ At RETROSPECTIVE: save_observation per insight, then bash .teamx/lib/engram.sh export`);
+            }
+        }
+        catch { /* ignore — never block session start */ }
+    }
+    // Experience layer — persona, modes, voice (behavioral contract)
+    // Resolution order: project's .teamx/ → plugin root teamx-lib/ → install.sh teamx-lib/
+    const experienceBase = resolveExperienceBase(cwd);
+    if (experienceBase) {
+        const experienceFiles = [
+            { file: 'persona.yaml', label: 'Persona' },
+            { file: 'modes.yaml', label: 'Modes' },
+            { file: 'voice.md', label: 'Voice' },
+        ];
+        const experienceParts = [];
+        for (const { file, label } of experienceFiles) {
+            const filePath = join(experienceBase, file);
+            if (existsSync(filePath)) {
+                try {
+                    const content = readFileSync(filePath, 'utf-8').trim();
+                    if (content)
+                        experienceParts.push(`### ${label}\n${content}`);
+                }
+                catch { /* ignore */ }
+            }
+        }
+        if (experienceParts.length > 0) {
+            messages.push(`[TeamX Experience Layer — Behavior Contract]\n` +
+                `These files govern tone, communication modes, and message grammar. Apply them throughout the session.\n\n` +
+                experienceParts.join('\n\n---\n\n'));
+        }
+    }
+    if (messages.length === 0) {
+        return { continue: true, suppressOutput: true };
+    }
+    return {
+        continue: true,
+        hookSpecificOutput: {
+            hookEventName: 'SessionStart',
+            additionalContext: messages.join('\n\n---\n\n'),
+        },
+    };
+}

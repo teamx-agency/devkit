@@ -59,6 +59,14 @@ export function handlePreCompact(data: PreCompactInput): PreCompactOutput {
     } catch { /* ignore */ }
   }
 
+  // Experience layer — remind agent to re-read behavior contract after compaction
+  const experiencePaths = ['persona.yaml', 'modes.yaml', 'voice.md'];
+  const anyExperience = experiencePaths.some(f => existsSync(join(cwd, '.teamx', f)));
+  const experienceReminder = anyExperience
+    ? `\n\n⚠ EXPERIENCE: After compaction, re-read .teamx/persona.yaml, .teamx/modes.yaml, .teamx/voice.md ` +
+      `to restore behavior contract (tone, interaction modes, message grammar).`
+    : '';
+
   return {
     continue: true,
     hookSpecificOutput: {
@@ -69,6 +77,7 @@ export function handlePreCompact(data: PreCompactInput): PreCompactOutput {
         criteriaReminder +
         personaReminder +
         engramReminder +
+        experienceReminder +
         `\n\nRe-read .teamx/state.json for full context.\n` +
         `Run: source .teamx/lib/state.sh && print_status`,
     },

@@ -91,7 +91,8 @@ IDLE → INIT → SELECT → CLASSIFY → [PLAN] → IMPLEMENT → VERIFY → CO
 4. Pick highest priority available task; explain in one line:
    `→ [title] — [reason: priority / unblocked / milestone deadline / explicit request]`
 5. Call `teamx_transition_task(uuid, "in_progress")`
-6. `source .teamx/lib/state.sh && set_current_task "<uuid>" "<title>" "<issue_iid>" && set_gate "CLASSIFY"`
+6. Extract `issue_iid` from the task object returned by `teamx_get_workflow_state` (field: `issue_iid`; use `0` if absent or null)
+   `source .teamx/lib/state.sh && set_current_task "<uuid>" "<title>" "<issue_iid>" && set_gate "CLASSIFY"`
 7. `teamx_post_project_update(project_code, "Starting: <title>", "status")`
 
 ---
@@ -105,15 +106,19 @@ Mandatory. Determines work type, checks readiness, creates branch.
 3. Classify work type: `feature / bugfix / hotfix / refactor / chore / discovery`
 4. `source .teamx/lib/state.sh && set_work_type "<type>"` — sets branch prefix, commit prefix, flow variant
 5. Check readiness:
-   - Acceptance criteria present?
-   - **Criteria quality** — for each criterion validate:
-     - Has an action verb (e.g., "the system returns...", "the user can...", "the endpoint validates...")
+   - **Criteria quality** — evaluate each criterion:
+     - Has an action verb ("the system returns...", "the user can...", "the endpoint validates...")
      - Has a concrete pass/fail condition (not "looks good", "works correctly", "is fast")
      - Is measurable or observable without subjective judgment
-     - If any criterion fails quality check → flag it as ambiguous → `set_readiness "needs_refinement"` → STOP
+   - **If criteria are missing or vague** — before blocking, try to refine them:
+     - Read task description, `.teamx/sdd-summary.json`, and relevant source files for context
+     - Write specific Given/When/Then criteria grounded in the actual codebase
+     - `teamx_update_acceptance_criteria(task_uuid, criteria=["Given … When … Then …", ...], mode="replace")`
+     - Re-evaluate the updated criteria against the quality checks above
+     - If you cannot write verifiable criteria (truly insufficient context): `set_readiness "needs_refinement"` → `teamx_post_project_update(project_code, "⚠ Blocked: criteria for '<title>' need refinement — <what's missing>", "blocker")` → STOP
    - If SDD exists: do criteria align with constitution and settled tech-stack decisions?
+   - If `criteria_status: "missing"` after update attempt → `set_readiness "needs_refinement"` → STOP
    - Dependencies resolved?
-   - If `criteria_status: "missing"` → `set_readiness "needs_refinement"` → post blocker → STOP
 6. `source .teamx/lib/state.sh && set_readiness "ready"`
 7. Create branch: `git checkout -b <branch_prefix><slug>` → `set_task_branch "<branch>"`
 8. Decide next gate:
@@ -129,8 +134,11 @@ Mandatory. Determines work type, checks readiness, creates branch.
 3. **Engram** — if available: call `get_context(layers=["architecture","implementation-patterns","past-decisions"])` → flag any deviation from remembered architectural decisions as an explicit risk; include `"Engram: [relevant past decision]"` in plan if found
 4. Propose: files to change, call sequence, data flow — grounded in SDD
 5. If any choice deviates from SDD tech-stack or constitution: explain trade-off and ask for explicit confirmation
-6. `source .teamx/lib/state.sh && set_plan '<files_json>' '<risks>' '<notes>'`
-7. Wait for user approval → `approve_plan && set_gate "IMPLEMENT"`
+6. **If deeper analysis reveals edge cases or conditions not covered by existing criteria:**
+   - `teamx_update_acceptance_criteria(task_uuid, criteria=["Given … When … Then …", ...], mode="append")`
+   - Use `append` — never replace criteria that are already specific
+7. `source .teamx/lib/state.sh && set_plan '<files_json>' '<risks>' '<notes>'`
+8. Wait for user approval → `approve_plan && set_gate "IMPLEMENT"`
 
 ---
 
@@ -166,13 +174,17 @@ Mandatory. Determines work type, checks readiness, creates branch.
    - If clean: continue
 2. `git add <specific-files>` — never `-A`
 3. Build commit message:
+   - Read `issue_iid` from state (set during SELECT from the task's `issue_iid` field)
+   - `issue_iid` is the GitLab issue number linked to this task — NOT the MR number, NOT an internal task ID
+   - If `issue_iid` is `0` or absent: omit the `Closes` line entirely
    ```
    <commit_prefix> <task-title>
 
-   Closes #<gitlab_issue_iid>    ← omit if issue_iid = 0
+   Closes #<issue_iid>    ← GitLab issue linked to this task; omit if issue_iid = 0
 
    Co-Authored-By: DevKit <hola@teamx.agency>
    ```
+   > **Where `issue_iid` comes from:** `teamx_get_workflow_state` / `teamx_get_task_detail` return an `issue_iid` field per task. It is stored in state via `set_current_task` during SELECT. If the task was not linked to a GitLab issue, the value is `0` — omit the `Closes` line.
 4. `source .teamx/lib/state.sh && set_git_committed "$(git rev-parse HEAD)" && set_gate "PUSH"`
 
 ---

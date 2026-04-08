@@ -26,6 +26,29 @@ export interface SessionStartOutput {
   };
 }
 
+/**
+ * Resolve the base directory for experience files (persona.yaml, modes.yaml, voice.md).
+ * Resolution order:
+ *   1. Project's .teamx/ — per-project customization (set up by INIT)
+ *   2. $CLAUDE_PLUGIN_ROOT/teamx-lib/ — plugin install method
+ *   3. ~/.claude/teamx-devkit/teamx-lib/ — install.sh method
+ */
+function resolveExperienceBase(cwd: string): string | null {
+  const candidates = [
+    join(cwd, '.teamx'),
+    ...(process.env.CLAUDE_PLUGIN_ROOT ? [join(process.env.CLAUDE_PLUGIN_ROOT, 'teamx-lib')] : []),
+    join(process.env.HOME || '', '.claude', 'teamx-devkit', 'teamx-lib'),
+  ];
+  for (const base of candidates) {
+    if (existsSync(join(base, 'persona.yaml')) ||
+        existsSync(join(base, 'modes.yaml')) ||
+        existsSync(join(base, 'voice.md'))) {
+      return base;
+    }
+  }
+  return null;
+}
+
 export function handleSessionStart(data: SessionStartInput): SessionStartOutput {
   const cwd = data.cwd || data.directory || process.cwd();
 
@@ -108,6 +131,34 @@ export function handleSessionStart(data: SessionStartInput): SessionStartOutput 
         );
       }
     } catch { /* ignore — never block session start */ }
+  }
+
+  // Experience layer — persona, modes, voice (behavioral contract)
+  // Resolution order: project's .teamx/ → plugin root teamx-lib/ → install.sh teamx-lib/
+  const experienceBase = resolveExperienceBase(cwd);
+  if (experienceBase) {
+    const experienceFiles = [
+      { file: 'persona.yaml', label: 'Persona' },
+      { file: 'modes.yaml',   label: 'Modes' },
+      { file: 'voice.md',     label: 'Voice' },
+    ];
+    const experienceParts: string[] = [];
+    for (const { file, label } of experienceFiles) {
+      const filePath = join(experienceBase, file);
+      if (existsSync(filePath)) {
+        try {
+          const content = readFileSync(filePath, 'utf-8').trim();
+          if (content) experienceParts.push(`### ${label}\n${content}`);
+        } catch { /* ignore */ }
+      }
+    }
+    if (experienceParts.length > 0) {
+      messages.push(
+        `[TeamX Experience Layer — Behavior Contract]\n` +
+        `These files govern tone, communication modes, and message grammar. Apply them throughout the session.\n\n` +
+        experienceParts.join('\n\n---\n\n')
+      );
+    }
   }
 
   if (messages.length === 0) {

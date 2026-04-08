@@ -36,6 +36,7 @@ const STATE_TRIGGER_TOOLS = new Set([
   'mcp__teamx__teamx_transition_task',
   'mcp__teamx__teamx_batch_transition_tasks',
   'mcp__teamx__teamx_satisfy_acceptance_criterion',
+  'mcp__teamx__teamx_update_acceptance_criteria',
 ]);
 
 // ---------------------------------------------------------------------------
@@ -137,6 +138,49 @@ function checkSatisfyResponse(toolOutput: string): string | null {
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Gate → Mode mapping
+// ---------------------------------------------------------------------------
+
+interface ModeEntry {
+  mode: 'execution' | 'pairing' | 'recovery' | 'review';
+  hint: string;
+}
+
+const GATE_MODE_MAP: Record<string, ModeEntry> = {
+  SELECT:        { mode: 'execution', hint: 'Show prioritization criteria. Pick highest-priority available task.' },
+  CLASSIFY:      { mode: 'pairing',   hint: 'Analyze work type and readiness. Think out loud — name type, criteria clarity, and blockers.' },
+  PLAN:          { mode: 'pairing',   hint: 'Propose plan with tradeoffs. List files, sequence, risks. Wait for approval before proceeding.' },
+  IMPLEMENT:     { mode: 'execution', hint: 'Path is clear. Brief plan, then execute. Minimal narration during routine work.' },
+  VERIFY:        { mode: 'recovery',  hint: 'Report each check result plainly. On failure: root cause (not symptoms) + specific repair plan. Zero panic.' },
+  COMMIT:        { mode: 'execution', hint: 'Encapsulate cleanly. Brief and factual.' },
+  PUSH:          { mode: 'execution', hint: 'Signal forward movement. Minimal.' },
+  MR:            { mode: 'execution', hint: 'Confirm MR created. Set merge-when-pipeline-succeeds.' },
+  PIPELINE:      { mode: 'recovery',  hint: 'On failure: read job log, diagnose root cause, set gate back to VERIFY. On success: confirm briefly.' },
+  REVIEW:        { mode: 'review',    hint: 'Pipeline passed. Present criteria evidence. Do NOT self-approve — wait for human QA confirmation.' },
+  MERGE:         { mode: 'execution', hint: 'Confirm integration. Handle conflicts explicitly if present.' },
+  EVIDENCE:      { mode: 'review',    hint: 'Map each acceptance criterion to concrete evidence (file, line, test, behavior). Be specific — not vague claims.' },
+  RETROSPECTIVE: { mode: 'review',    hint: 'Extract learning. At least 1 insight. Push lessons with teamx_push_lessons before advancing.' },
+};
+
+/**
+ * Builds a mode directive message when a gate transition occurs.
+ * Only emits on set_gate calls (not on other state.sh commands).
+ */
+function buildModeDirective(gate: string, toolInput: Record<string, unknown>): string | null {
+  // Only emit on actual set_gate transitions
+  const command = (toolInput.command as string) || '';
+  if (!/set_gate/.test(command)) return null;
+
+  const entry = GATE_MODE_MAP[gate];
+  if (!entry) return null;
+
+  return (
+    `[TeamX Mode → ${entry.mode.toUpperCase()}]\n` +
+    `Gate: ${gate} — ${entry.hint}`
+  );
+}
+
 export function handlePostToolUse(data: PostToolInput): PostToolOutput {
   const toolName = data.tool_name || data.toolName || '';
   const toolInput = (data.tool_input || data.toolInput || {}) as Record<string, unknown>;
@@ -211,6 +255,26 @@ export function handlePostToolUse(data: PostToolInput): PostToolOutput {
     } catch { /* ignore */ }
   }
 
+  // After update_acceptance_criteria: confirm update and remind to re-check readiness
+  if (toolName === 'mcp__teamx__teamx_update_acceptance_criteria') {
+    const output = data.tool_output || data.toolOutput || '';
+    try {
+      const parsed = JSON.parse(output);
+      const criteria: unknown[] = parsed?.data?.data?.acceptance_criteria
+        ?? parsed?.data?.acceptance_criteria
+        ?? [];
+      const mode = (toolInput.mode as string) || 'replace';
+      const count = criteria.length;
+      if (count > 0) {
+        messages.push(
+          `[TeamX Criteria Updated — ${mode.toUpperCase()}]\n` +
+          `${count} criteria now on task. ` +
+          `Verify each is Given/When/Then and has a concrete pass/fail condition before advancing to IMPLEMENT.`
+        );
+      }
+    } catch { /* non-JSON — still continue */ }
+  }
+
   // After satisfy_acceptance_criterion: validate API response (Gap #8)
   if (toolName === 'mcp__teamx__teamx_satisfy_acceptance_criterion') {
     const output = data.tool_output || data.toolOutput || '';
@@ -220,10 +284,16 @@ export function handlePostToolUse(data: PostToolInput): PostToolOutput {
     }
   }
 
-  // After state.sh or transition: inject updated state summary
+  // After state.sh or transition: inject updated state summary + active mode
   if (isStateShCall || toolName === 'mcp__teamx__teamx_transition_task') {
     const summary = buildStateSummary(state);
     messages.push(`[TeamX State Updated]\n${summary}`);
+
+    // Inject mode directive on gate transitions
+    const modeDirective = buildModeDirective(state.current_gate, toolInput);
+    if (modeDirective) {
+      messages.push(modeDirective);
+    }
   }
 
   if (messages.length === 0) {

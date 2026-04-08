@@ -14,7 +14,7 @@ Thumbs.db
 *.swp
 
 node_modules/
-dist/
+# dist/ is intentionally committed — the plugin serves compiled JS directly
 
 
 .mcp.json
