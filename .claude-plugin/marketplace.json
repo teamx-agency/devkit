@@ -20,6 +20,13 @@
         "state-machine",
         "quality-gates",
         "teamx"
+      ],
+      "skills": [
+        "./skills/teamx-dev",
+        "./skills/teamx-handoff",
+        "./skills/teamx-health",
+        "./skills/teamx-review",
+        "./skills/teamx-status"
       ]
     }
   ],
