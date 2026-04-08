@@ -39,6 +39,12 @@ export function handlePreCompact(data: PreCompactInput): PreCompactOutput {
       `to restore acceptance criteria status — criteria are NOT persisted in state.json.`
     : '';
 
+  // Persona — remind agent to restore identity after compaction
+  const personaPath = join(cwd, '.teamx', 'persona.yaml');
+  const personaReminder = existsSync(personaPath)
+    ? `\n\n⚠ PERSONA: Re-read .teamx/persona.yaml to restore identity, behavioral rules, and candor policy.`
+    : '';
+
   // Engram — remind agent to restore cognitive context after compaction
   let engramReminder = '';
   const engramStatusPath = join(cwd, '.teamx', 'engram-status.json');
@@ -61,6 +67,7 @@ export function handlePreCompact(data: PreCompactInput): PreCompactOutput {
         `[TeamX Context Checkpoint — READ THIS AFTER COMPACTION]\n` +
         `${summary}` +
         criteriaReminder +
+        personaReminder +
         engramReminder +
         `\n\nRe-read .teamx/state.json for full context.\n` +
         `Run: source .teamx/lib/state.sh && print_status`,

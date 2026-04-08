@@ -565,19 +565,38 @@ if [ "$HAS_CLAUDE" = "1" ]; then
              "$DEVKIT_DIR/dist/hooks"
 
     GHRAW="https://raw.githubusercontent.com/teamx-agency/devkit/main"
+    # DEVKIT_LOCAL: si se define, copia desde directorio local en vez de descargar de GitHub
+    # Uso: DEVKIT_LOCAL=/ruta/al/devkit bash install.sh
+    LOCAL_SRC="${DEVKIT_LOCAL:-}"
 
     # Scripts entry points
     for f in run.cjs pre-tool-gate.mjs stop-guard.mjs session-start.mjs pre-compact-save.mjs post-tool-state.mjs; do
-      curl -sSL "$GHRAW/scripts/$f" -o "$DEVKIT_DIR/scripts/$f" 2>/dev/null || warn "No se pudo descargar scripts/$f"
+      if [ -n "$LOCAL_SRC" ] && [ -f "$LOCAL_SRC/scripts/$f" ]; then
+        cp "$LOCAL_SRC/scripts/$f" "$DEVKIT_DIR/scripts/$f"
+      else
+        curl -sSL "$GHRAW/scripts/$f" -o "$DEVKIT_DIR/scripts/$f" 2>/dev/null || warn "No se pudo descargar scripts/$f"
+      fi
     done
-    curl -sSL "$GHRAW/scripts/lib/stdin.mjs" -o "$DEVKIT_DIR/scripts/lib/stdin.mjs" 2>/dev/null || warn "No se pudo descargar scripts/lib/stdin.mjs"
+    if [ -n "$LOCAL_SRC" ] && [ -f "$LOCAL_SRC/scripts/lib/stdin.mjs" ]; then
+      cp "$LOCAL_SRC/scripts/lib/stdin.mjs" "$DEVKIT_DIR/scripts/lib/stdin.mjs"
+    else
+      curl -sSL "$GHRAW/scripts/lib/stdin.mjs" -o "$DEVKIT_DIR/scripts/lib/stdin.mjs" 2>/dev/null || warn "No se pudo descargar scripts/lib/stdin.mjs"
+    fi
 
     # Compiled TypeScript (dist/)
     for f in index.js state-reader.js gate-rules.js; do
-      curl -sSL "$GHRAW/dist/$f" -o "$DEVKIT_DIR/dist/$f" 2>/dev/null || warn "No se pudo descargar dist/$f"
+      if [ -n "$LOCAL_SRC" ] && [ -f "$LOCAL_SRC/dist/$f" ]; then
+        cp "$LOCAL_SRC/dist/$f" "$DEVKIT_DIR/dist/$f"
+      else
+        curl -sSL "$GHRAW/dist/$f" -o "$DEVKIT_DIR/dist/$f" 2>/dev/null || warn "No se pudo descargar dist/$f"
+      fi
     done
     for f in pre-tool-gate.js stop-guard.js session-start.js pre-compact-save.js post-tool-state.js; do
-      curl -sSL "$GHRAW/dist/hooks/$f" -o "$DEVKIT_DIR/dist/hooks/$f" 2>/dev/null || warn "No se pudo descargar dist/hooks/$f"
+      if [ -n "$LOCAL_SRC" ] && [ -f "$LOCAL_SRC/dist/hooks/$f" ]; then
+        cp "$LOCAL_SRC/dist/hooks/$f" "$DEVKIT_DIR/dist/hooks/$f"
+      else
+        curl -sSL "$GHRAW/dist/hooks/$f" -o "$DEVKIT_DIR/dist/hooks/$f" 2>/dev/null || warn "No se pudo descargar dist/hooks/$f"
+      fi
     done
 
     # Merge hooks en settings.json

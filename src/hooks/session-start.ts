@@ -81,6 +81,17 @@ export function handleSessionStart(data: SessionStartInput): SessionStartOutput 
     } catch { /* ignore */ }
   }
 
+  // Persona + experience files — re-inject on every session so behavior survives context resets
+  const personaPath = join(cwd, '.teamx', 'persona.yaml');
+  if (existsSync(personaPath)) {
+    try {
+      const persona = readFileSync(personaPath, 'utf-8').trim();
+      if (persona) {
+        messages.push(`[TeamX Persona — Active]\n${persona}`);
+      }
+    } catch { /* ignore */ }
+  }
+
   // Engram memory layer — inject instructions if available (graceful degradation)
   const engramStatusPath = join(cwd, '.teamx', 'engram-status.json');
   if (existsSync(engramStatusPath)) {
