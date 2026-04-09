@@ -261,10 +261,13 @@ Mandatory. Determines work type, checks readiness, creates branch.
    - `teamx_satisfy_acceptance_criterion(task_uuid, criterion_index, evidence)`
    - Format: `"<what was done> — verified via <commit sha / test name / manual check>"`
 
-2. `teamx_transition_task(uuid, "done")`
+2. **Log time — MANDATORY. Do NOT skip under any circumstance.**
+   - Read `started_at` from `.teamx/state.json` → compute hours from `started_at` to now → round to nearest 0.5h (minimum 0.5h)
+   - If `started_at` is unavailable or state.json does not exist: read task estimate from `teamx_get_task_detail` (field `estimated_hours`); if also absent, use 1.0h
+   - Call: `teamx_log_time_entry(project_code, task_uuid, hours, "<work_type>: <title> — <one line of what was delivered>")`
+   - **This call MUST succeed before advancing. If it fails: retry once, then surface the error to the user and wait — do NOT call `teamx_transition_task` until time is logged.**
 
-3. Log time (estimate from `started_at` in state.json to now, round to nearest 0.5h):
-   - `teamx_log_time_entry(project_code, task_uuid, hours, "<work_type>: <title> — <one line of what was delivered>")`
+3. `teamx_transition_task(uuid, "done")`
 
 4. `source .teamx/lib/state.sh && write_journal && complete_current_task`
 
@@ -353,3 +356,4 @@ Use when a merged change causes a production incident. Do NOT start a normal tas
 11. Production incidents → ROLLBACK entry point, not a new task
 12. Recovery: `source .teamx/lib/state.sh && migrate_state && print_status`
 13. Respond in user's language
+14. **Time logging is non-negotiable** — `teamx_log_time_entry` MUST be called in EVIDENCE BEFORE `teamx_transition_task`. A task without logged time is an incomplete EVIDENCE gate. If hours cannot be determined from `started_at`, use the task estimate. If no estimate, use 1.0h. Never skip, never assume 0h.
