@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "teamx-devkit",
-  "description": "TeamX Delivery OS — Hook-enforced state machine with quality gates for Claude Code",
+  "description": "TeamX Delivery OS \u2014 Hook-enforced state machine with quality gates for Claude Code",
   "owner": {
     "name": "TeamX Agency"
   },
