@@ -1,0 +1,17 @@
+{
+  "name": "devkit",
+  "description": "Deterministic delivery workflow with 14 gates, automatic enforcement via hooks, agent persona, and TeamX MCP integration.",
+  "version": "2.0.0",
+  "author": {
+    "name": "TeamX Agency"
+  },
+  "license": "MIT",
+  "keywords": ["claude-code", "plugin", "delivery", "state-machine", "teamx"],
+  "skills": [
+    "./skills/teamx-dev",
+    "./skills/teamx-handoff",
+    "./skills/teamx-health",
+    "./skills/teamx-review",
+    "./skills/teamx-status"
+  ]
+}
