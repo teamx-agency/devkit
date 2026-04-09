@@ -18,7 +18,15 @@ El plugin instala automaticamente:
 - **Hooks** — 5 hooks de enforcement registrados via `hooks/hooks.json`
 - **MCP TeamX** — servidor `teamx` disponible en todas las sesiones
 
-### Otros tools (Antigravity, OpenCode, Codex, Crush)
+### OpenCode — One-liner
+
+```bash
+curl -sSL https://raw.githubusercontent.com/teamx-agency/devkit/main/install-opencode.sh | bash
+```
+
+Instala `teamx-devkit` via npm/bun, crea `.opencode/` y descarga los archivos de configuracion. Ver [seccion OpenCode](#opencode) para detalles.
+
+### Otros tools (Antigravity, Codex, Crush)
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/teamx-agency/devkit/main/install.sh | bash
@@ -332,11 +340,73 @@ teamx-devkit/
 │   ├── health.sh            <- Auditoria de salud local
 │   ├── lessons.sh           <- Extrae patrones de journals
 │   └── persona.yaml, modes.yaml, rituals.yaml, voice.md, work_types.yaml
-├── configs/                 <- MCP configs para otros tools (Antigravity, OpenCode, Codex, Crush)
-├── install.sh               <- MCP installer para Antigravity, OpenCode, Codex, Crush
+├── configs/
+│   └── opencode/            <- Plugin y config para OpenCode
+│       ├── opencode.json    <- Config: plugin + MCP + instructions
+│       ├── plugins/
+│       │   └── devkit.js    <- Plugin JS auto-contenido (logica de hooks)
+│       └── instructions/
+│           └── teamx-dev.md <- State machine como instrucciones del LLM
+├── opencode-plugin.js       <- Entry point npm para OpenCode ("teamx-devkit/opencode-plugin")
+├── install.sh               <- MCP installer para Antigravity, Codex, Crush
+├── install-opencode.sh      <- One-liner installer para OpenCode
 ├── package.json
 └── tsconfig.json
 ```
+
+---
+
+## OpenCode
+
+El devkit esta publicado en npm como `teamx-devkit` y porta el sistema completo de hooks al plugin API de OpenCode.
+
+### Instalacion rapida
+
+```bash
+curl -sSL https://raw.githubusercontent.com/teamx-agency/devkit/main/install-opencode.sh | bash
+```
+
+O manual:
+
+```bash
+bun add teamx-devkit          # npm install teamx-devkit tambien funciona
+mkdir -p .opencode/instructions
+cp node_modules/teamx-devkit/configs/opencode/opencode.json .opencode/opencode.json
+cp node_modules/teamx-devkit/configs/opencode/instructions/teamx-dev.md .opencode/instructions/
+opencode
+```
+
+### Como funciona en OpenCode
+
+OpenCode carga automaticamente plugins declarados en `.opencode/opencode.json`. El devkit registra 4 hooks:
+
+| Hook OpenCode | Equivalente Claude Code | Que hace |
+|---|---|---|
+| `tool.execute.before` | `PreToolUse` | Gate enforcement — bloquea tools fuera del gate correcto |
+| `tool.execute.after` | `PostToolUse` | State tracking, QA warnings, criterios progress |
+| `session.created` | `SessionStart` | Restaura estado, handoff, lessons, persona |
+| `experimental.session.compacting` | `PreCompact` | Preserva contexto antes de compactacion |
+| `session.idle` | `Stop` | Escribe handoff.md si hay trabajo en curso (best-effort) |
+
+### Diferencias con Claude Code
+
+| | Claude Code | OpenCode |
+|---|---|---|
+| Instalar | `/plugin` → marketplace | `bun add teamx-devkit` + `opencode.json` |
+| Skill `/teamx-dev` | Slash command | Instructions file siempre activo |
+| Stop guard | Bloqueo duro del agente | `session.idle` escribe handoff (best-effort) |
+| Hook format | `hooks.json` + scripts Node | Plugin JS exportado desde npm |
+
+### Archivos generados
+
+```
+.opencode/
+├── opencode.json                  <- Config: plugin + MCP + instructions
+└── instructions/
+    └── teamx-dev.md               <- State machine completo como instrucciones del LLM
+```
+
+El plugin lee `.teamx/state.json` del proyecto (creado por INIT igual que en Claude Code). La logica de gates, bash scripts y archivos de experiencia son identicos en ambas herramientas.
 
 ---
 
