@@ -294,6 +294,8 @@ Mandatory. At least 1 insight required before advancing.
 3. Read `.teamx/lessons.json`
 4. If `sdd_quality_signals`, `bottlenecks`, or `gate_cycle_times` (slow gates) non-empty:
    - `teamx_push_lessons(project_code, <lessons.json content>)`
+   - **Field limits:** `signal` max 500 chars (descriptive sentence OK), `pattern` and `suggested_action` unlimited text, `work_type` max 50 chars, `gate` max 50 chars, `severity` one of `low|medium|high`
+   - Keep `sdd_quality_signals` to ≤ 20 entries per call — split into multiple calls if lessons.json has more
    - Surface top 2–3 signals to user with one-line interpretation each
 5. If empty: note "No new patterns" briefly
 5. **Hotfix postmortem** — if `flow_variant == "compressed"`:

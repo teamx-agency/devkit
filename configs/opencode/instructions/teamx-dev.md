@@ -124,6 +124,8 @@ IDLE → INIT → SELECT → CLASSIFY → [PLAN] → IMPLEMENT → VERIFY → CO
 1. `bash .teamx/lib/lessons.sh`
 2. `print_cycle_times` — flag slow gates
 3. If signals: `teamx_push_lessons(code, <lessons.json>)` → surface top 2–3 insights
+   - **Field limits:** `signal` max 500 chars, `pattern`/`suggested_action` unlimited, `work_type` max 50 chars, `gate` max 50 chars, `severity` = `low|medium|high`
+   - Max 20 entries per call — split into multiple calls if needed
 4. Hotfix: write postmortem → `require_postmortem` blocks if incomplete
 5. `complete_retrospective` → `set_gate "SELECT"`
 
