@@ -23,6 +23,10 @@ const TOOL_GATE_MAP: Record<string, Gate[]> = {
   mcp__teamx__teamx_satisfy_acceptance_criterion: ['EVIDENCE'],
   mcp__teamx__teamx_log_time_entry: ['EVIDENCE'],
   mcp__teamx__teamx_push_lessons: ['RETROSPECTIVE'],
+  mcp__teamx__teamx_update_lesson: ['RETROSPECTIVE'],
+  mcp__teamx__teamx_delete_lesson: ['RETROSPECTIVE'],
+  mcp__teamx__teamx_set_knowledge: ['PLAN', 'RETROSPECTIVE'],
+  mcp__teamx__teamx_delete_knowledge: ['RETROSPECTIVE'],
   mcp__teamx__teamx_update_acceptance_criteria: ['CLASSIFY', 'PLAN'],
 
   // MCP TeamX — GitLab write operations

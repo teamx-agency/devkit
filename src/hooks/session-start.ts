@@ -104,6 +104,22 @@ export function handleSessionStart(data: SessionStartInput): SessionStartOutput 
     } catch { /* ignore */ }
   }
 
+  // Project knowledge (from teamx_list_knowledge, saved at last INIT)
+  const knowledgePath = join(cwd, '.teamx', 'project-knowledge.json');
+  if (existsSync(knowledgePath)) {
+    try {
+      const knowledgeData = JSON.parse(readFileSync(knowledgePath, 'utf-8'));
+      const items: Array<{ type: string; title: string; content: string }> =
+        knowledgeData?.items ?? [];
+      if (items.length > 0) {
+        const top = items.slice(0, 5)
+          .map(k => `- [${k.type}] ${k.title}`)
+          .join('\n');
+        messages.push(`[TeamX Project Knowledge]\n${top}`);
+      }
+    } catch { /* ignore */ }
+  }
+
   // Persona + experience files — re-inject on every session so behavior survives context resets
   const personaPath = join(cwd, '.teamx', 'persona.yaml');
   if (existsSync(personaPath)) {

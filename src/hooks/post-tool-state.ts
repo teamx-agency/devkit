@@ -160,7 +160,7 @@ const GATE_MODE_MAP: Record<string, ModeEntry> = {
   REVIEW:        { mode: 'review',    hint: 'Pipeline passed. Present criteria evidence. Do NOT self-approve — wait for human QA confirmation.' },
   MERGE:         { mode: 'execution', hint: 'Confirm integration. Handle conflicts explicitly if present.' },
   EVIDENCE:      { mode: 'review',    hint: 'Map each acceptance criterion to concrete evidence (file, line, test, behavior). Be specific — not vague claims.' },
-  RETROSPECTIVE: { mode: 'review',    hint: 'Extract learning. At least 1 insight. Push lessons with teamx_push_lessons before advancing.' },
+  RETROSPECTIVE: { mode: 'review',    hint: 'Extract learning. At least 1 insight. Push lessons with teamx_push_lessons. Update or delete stale lessons with teamx_update_lesson / teamx_delete_lesson. Capture ADRs, conventions and stack decisions with teamx_set_knowledge before advancing.' },
 };
 
 /**

@@ -98,6 +98,10 @@ const TOOL_GATE_MAP = {
   mcp__teamx__teamx_satisfy_acceptance_criterion:['EVIDENCE'],
   mcp__teamx__teamx_log_time_entry:              ['EVIDENCE'],
   mcp__teamx__teamx_push_lessons:                ['RETROSPECTIVE'],
+  mcp__teamx__teamx_update_lesson:               ['RETROSPECTIVE'],
+  mcp__teamx__teamx_delete_lesson:               ['RETROSPECTIVE'],
+  mcp__teamx__teamx_set_knowledge:               ['PLAN', 'RETROSPECTIVE'],
+  mcp__teamx__teamx_delete_knowledge:            ['RETROSPECTIVE'],
   mcp__teamx__teamx_update_acceptance_criteria:  ['CLASSIFY', 'PLAN'],
   mcp__teamx__gitlab_create_merge_request:       ['MR'],
   mcp__teamx__gitlab_merge:                      ['MR', 'MERGE'],
@@ -260,7 +264,7 @@ const GATE_MODE_MAP = {
   REVIEW:        { mode: 'REVIEW',    hint: 'Present criteria evidence. Do NOT self-approve — wait for human QA.' },
   MERGE:         { mode: 'EXECUTION', hint: 'Confirm integration. Handle conflicts explicitly.' },
   EVIDENCE:      { mode: 'REVIEW',    hint: 'Map each criterion to concrete evidence. Be specific.' },
-  RETROSPECTIVE: { mode: 'REVIEW',    hint: 'At least 1 insight. Push lessons before advancing.' },
+  RETROSPECTIVE: { mode: 'REVIEW',    hint: 'At least 1 insight. Push lessons with teamx_push_lessons. Update or delete stale lessons with teamx_update_lesson / teamx_delete_lesson. Capture ADRs, conventions and stack decisions with teamx_set_knowledge before advancing.' },
 }
 
 function isStateShCommand(args) {
@@ -451,6 +455,19 @@ export const DevKitPlugin = async ({ directory }) => {
               .join('\n')
             messages.push(`[TeamX Shared Lessons — Team]\n${top}`)
           }
+        }
+
+        // Project knowledge (from teamx_list_knowledge, saved at last INIT)
+        const knowledgePath = join(cwd, '.teamx', 'project-knowledge.json')
+        if (existsSync(knowledgePath)) {
+          try {
+            const knowledgeData = JSON.parse(readFileSync(knowledgePath, 'utf-8'))
+            const items = knowledgeData?.items ?? []
+            if (items.length > 0) {
+              const top = items.slice(0, 5).map(k => `- [${k.type}] ${k.title}`).join('\n')
+              messages.push(`[TeamX Project Knowledge]\n${top}`)
+            }
+          } catch { /* ignore */ }
         }
 
         // Persona
