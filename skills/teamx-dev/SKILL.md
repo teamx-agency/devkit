@@ -72,6 +72,7 @@ IDLE → INIT → SELECT → CLASSIFY → [PLAN] → IMPLEMENT → VERIFY → CO
      `{ constitution, tech_stack, risks, summary }`
    - Surface constitution and tech stack to user
 7. Call `teamx_get_shared_lessons(project_code, limit=10)` → save to `.teamx/shared-lessons.json` → surface top 3 signals
+7c. If project has a defined client: call `teamx_get_stack_experience(project_code)` → surface `frequency_summary` to user so architecture decisions are informed by real stack patterns from similar projects
 7b. **Engram** — `bash .teamx/lib/engram.sh check` → if available:
    - `bash .teamx/lib/engram.sh import` — sync shared memory from team
    - Call `get_context(layers=["project","architecture","recent-decisions"])` → surface any relevant cross-session insights under `[Engram Context]`

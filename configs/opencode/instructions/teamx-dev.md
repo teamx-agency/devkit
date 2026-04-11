@@ -44,6 +44,7 @@ IDLE → INIT → SELECT → CLASSIFY → [PLAN] → IMPLEMENT → VERIFY → CO
 4. If `.teamx/` missing: create it, download lib files from GitHub, run `bash .teamx/lib/init.sh <repo_path>`
 5. Load SDD session if exists; surface constitution and tech stack
 6. Read experience files: `persona.yaml`, `modes.yaml`, `rituals.yaml`, `voice.md`, `work_types.yaml`
+6b. If project has a defined client: call `teamx_get_stack_experience(project_code)` → surface `frequency_summary` to inform architecture recommendations
 7. `source .teamx/lib/state.sh && migrate_state && set_gate "SELECT"`
 
 ### SELECT
