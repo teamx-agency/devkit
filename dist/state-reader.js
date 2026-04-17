@@ -83,3 +83,25 @@ export function buildStateSummary(state) {
     }
     return lines.join('\n');
 }
+/**
+ * Render the pause-for-decision block when the current task has an
+ * unresolved pause. Returns null when no active pause exists.
+ *
+ * This is the structured "significant interrupt" — distinct from mode
+ * directives, which fire on every gate transition. A pause means the
+ * agent hit a genuine categorised blocker; the workflow does not advance
+ * until `resolve_pause` is called.
+ */
+export function buildPauseBlock(state) {
+    const pause = state.current_task?.pause;
+    if (!pause || pause.resolved === true || !pause.category)
+        return null;
+    const lines = [
+        `⏸  PAUSE-FOR-DECISION [${pause.category}]`,
+        pause.reason,
+    ];
+    if (pause.options)
+        lines.push(`Opciones: ${pause.options}`);
+    lines.push('Workflow parado. Resuelve con el usuario y corre: source .teamx/lib/state.sh && resolve_pause');
+    return lines.join('\n');
+}

@@ -321,6 +321,282 @@ approve_plan() {
 }
 
 # =============================================================================
+# Autonomy — conditional auto-approve + pause-for-decision (v3.1)
+# =============================================================================
+# Design: replace trámite prompts with either (a) silent auto-approval when
+# every safety condition holds, or (b) a structured pause-for-decision signal
+# that only fires on truly relevant situations. The agent never asks on
+# routine transitions; humans are interrupted only when something matters.
+# =============================================================================
+
+# Read a key from .teamx/config.json with a jq path + default. Never fails.
+_autonomy_config_get() {
+    local jq_path="$1" default_val="$2"
+    if [ -f "${TEAMX_DIR}/config.json" ]; then
+        local val
+        val=$(jq -r "${jq_path} // empty" "${TEAMX_DIR}/config.json" 2>/dev/null || echo "")
+        [ -n "$val" ] && { echo "$val"; return 0; }
+    fi
+    echo "$default_val"
+}
+
+# auto_approve_plan_if_safe
+# Approves plan + advances to IMPLEMENT when ALL hold:
+#   - work_type != hotfix
+#   - current_task.plan.deviates_from_sdd == false (must be set explicitly by agent)
+#   - current_task.plan.files_touched <= autonomy.plan.max_files (default 8)
+#   - readiness == "ready"
+# On failure, prints reasons and returns 1 (caller should emit pause_for_decision).
+auto_approve_plan_if_safe() {
+    local max_files
+    max_files=$(_autonomy_config_get '.autonomy.plan.max_files' '8')
+
+    local work_type deviates files readiness
+    work_type=$(jq -r '.current_task.work_type // ""' "$STATE_FILE")
+    # jq "value // default" treats `false` as falsy; use `has` for explicit presence
+    deviates=$(jq -r '
+        if (.current_task.plan // null) == null or (.current_task.plan | has("deviates_from_sdd") | not)
+        then "unset"
+        else (.current_task.plan.deviates_from_sdd | tostring)
+        end
+    ' "$STATE_FILE")
+    files=$(jq -r '
+        (.current_task.plan.files_touched) //
+        ((.current_task.plan.proposed_files // []) | length)
+    ' "$STATE_FILE")
+    readiness=$(jq -r '.current_task.readiness // ""' "$STATE_FILE")
+
+    local reasons=()
+    [ "$work_type" = "hotfix" ] && reasons+=("work_type=hotfix requires human approval")
+    [ "$deviates" = "true" ]    && reasons+=("plan.deviates_from_sdd=true")
+    [ "$deviates" = "unset" ]   && reasons+=("plan.deviates_from_sdd not set by agent")
+    [ "$readiness" != "ready" ] && reasons+=("readiness=${readiness:-unset} (expected ready)")
+    if [ "$files" -gt "$max_files" ] 2>/dev/null; then
+        reasons+=("files_touched=$files > threshold=$max_files")
+    fi
+
+    if [ ${#reasons[@]} -eq 0 ]; then
+        approve_plan
+        set_gate "IMPLEMENT"
+        echo "PLAN auto-approved (files=$files, threshold=$max_files) → IMPLEMENT"
+        return 0
+    fi
+
+    local joined
+    joined=$(printf '%s; ' "${reasons[@]}")
+    joined="${joined%; }"
+    echo "PLAN auto-approve denied: $joined"
+    return 1
+}
+
+# pause_for_decision — explicit interrupt signal recorded on the current task
+# The post-tool-state hook renders a structured block when current_task.pause
+# is present and unresolved.
+# Usage:
+#   pause_for_decision "<category>" "<reason>" "[A] opt1|[B] opt2|[C] opt3"
+# Categories (reserved):
+#   criterion-ambiguous | sdd-deviation | pipeline-failed-twice |
+#   blocking-architectural-choice | security-risk-detected | manual-review-required
+pause_for_decision() {
+    local category="$1" reason="$2" options="${3:-}"
+
+    case "$category" in
+        criterion-ambiguous|sdd-deviation|pipeline-failed-twice|blocking-architectural-choice|security-risk-detected|manual-review-required)
+            ;;
+        *)
+            echo "ERROR: unknown pause category: $category" >&2
+            echo "valid: criterion-ambiguous, sdd-deviation, pipeline-failed-twice, blocking-architectural-choice, security-risk-detected, manual-review-required" >&2
+            return 1
+            ;;
+    esac
+
+    if [ -z "$reason" ]; then
+        echo "ERROR: pause_for_decision requires a reason" >&2
+        return 1
+    fi
+
+    local tmp
+    tmp=$(mktemp)
+    jq --arg c "$category" --arg r "$reason" --arg o "$options" '
+        .current_task.pause = {
+            category: $c,
+            reason: $r,
+            options: $o,
+            paused_at: (now | todate),
+            resolved: false
+        }
+    ' "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
+
+    echo "⏸  PAUSE-FOR-DECISION [$category]"
+    echo "   $reason"
+    [ -n "$options" ] && echo "   Opciones: $options"
+    echo "   Workflow parado hasta resolución. Llama resolve_pause tras la respuesta."
+}
+
+resolve_pause() {
+    local tmp
+    tmp=$(mktemp)
+    jq '
+        .current_task.pause.resolved = true |
+        .current_task.pause.resolved_at = (now | todate)
+    ' "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
+    echo "PAUSE resolved."
+}
+
+is_paused() {
+    jq -e '
+        (.current_task.pause // null) != null and
+        (.current_task.pause.category // "") != "" and
+        (.current_task.pause.resolved // false) == false
+    ' "$STATE_FILE" > /dev/null 2>&1
+}
+
+# =============================================================================
+# Branch strategy — per-task (default) or per-feature (spec-kit style, Phase 3.7)
+# =============================================================================
+# per-task     → one branch per ProjectTask (legacy, default): <prefix><slug>
+# per-feature  → one branch per UserStory, reused across its tasks:
+#                <prefix><project>-<us_code>-<us_slug>
+# Configured via .teamx/config.json → autonomy.branch_strategy.
+# =============================================================================
+
+# Slugify a string: lowercase, non-alphanumerics → "-", collapse runs, trim.
+_slugify() {
+    echo "$1" \
+        | tr '[:upper:]' '[:lower:]' \
+        | sed 's/[^a-z0-9]\{1,\}/-/g' \
+        | sed 's/^-*//; s/-*$//' \
+        | cut -c1-40
+}
+
+# Attach user_story metadata to the current task. Called from SELECT after
+# set_current_task when the workflow_state response carries a user_story block.
+# Passing an empty code detaches.
+#
+# Usage:
+#   set_task_user_story "<code>" "<title>" "<priority>"
+set_task_user_story() {
+    local code="$1" title="${2:-}" priority="${3:-}"
+    local tmp
+    tmp=$(mktemp)
+
+    if [ -z "$code" ]; then
+        jq 'del(.current_task.user_story)' "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
+        return 0
+    fi
+
+    local slug
+    slug=$(_slugify "${title:-$code}")
+
+    jq --arg c "$code" --arg t "$title" --arg p "$priority" --arg s "$slug" '
+        .current_task.user_story = {
+            code: $c,
+            title: $t,
+            priority: $p,
+            slug: $s
+        }
+    ' "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
+    echo "USER_STORY → $code ($priority)"
+}
+
+# Compute the branch name for the current task according to branch strategy.
+# Reads:
+#   - autonomy.branch_strategy (config) — defaults to per-task
+#   - .current_task.branch_prefix        — set by set_work_type
+#   - .project_code                      — at the project root
+#   - .current_task.user_story.{code,slug} — populated by set_task_user_story
+#
+# Usage:
+#   BRANCH=$(resolve_task_branch "<task-slug>")
+resolve_task_branch() {
+    local task_slug="$1"
+    local strategy prefix us_code us_slug project_slug
+
+    strategy=$(_autonomy_config_get '.autonomy.branch_strategy' 'per-task')
+    prefix=$(jq -r '.current_task.branch_prefix // "feat/"' "$STATE_FILE")
+    us_code=$(jq -r '.current_task.user_story.code // ""' "$STATE_FILE")
+    us_slug=$(jq -r '.current_task.user_story.slug // ""' "$STATE_FILE")
+
+    if [ "$strategy" = "per-feature" ] && [ -n "$us_code" ]; then
+        project_slug=$(_slugify "$(jq -r '.project_code // "prj"' "$STATE_FILE")")
+        local us_code_slug
+        us_code_slug=$(_slugify "$us_code")
+        # If us_slug is empty (edge case), fall back to the code itself.
+        [ -z "$us_slug" ] && us_slug="$us_code_slug"
+        echo "${prefix}${project_slug}-${us_code_slug}-${us_slug}"
+        return 0
+    fi
+
+    echo "${prefix}${task_slug}"
+}
+
+# Look up the cached feature-branch record for a given US code.
+# Returns a JSON object on stdout, or empty when none is cached.
+#
+# Shape:
+#   { "branch": "feat/prj010-us001-hero", "mr_iid": 42, "updated_at": "..." }
+lookup_feature_state() {
+    local us_code="$1"
+    [ -z "$us_code" ] && return 0
+    jq -c --arg u "$us_code" '.feature_branches[$u] // empty' "$STATE_FILE"
+}
+
+# Register (idempotently) the feature branch for a US in state.json.
+# Preserves any existing mr_iid so calling this on a subsequent task of the
+# same US does not clobber the MR reference.
+register_feature_branch() {
+    local us_code="$1" branch="$2"
+    if [ -z "$us_code" ] || [ -z "$branch" ]; then
+        return 0
+    fi
+    local tmp now
+    tmp=$(mktemp)
+    now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    jq --arg u "$us_code" --arg b "$branch" --arg now "$now" '
+        .feature_branches = (.feature_branches // {}) |
+        .feature_branches[$u] = (
+            (.feature_branches[$u] // {}) |
+            .branch = $b |
+            .updated_at = $now |
+            .mr_iid = (.mr_iid // null)
+        )
+    ' "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
+}
+
+# Record the MR iid for a feature branch so subsequent tasks of the same US
+# reuse it (no gitlab_create_merge_request call).
+register_feature_mr() {
+    local us_code="$1" mr_iid="$2"
+    if [ -z "$us_code" ] || [ -z "$mr_iid" ]; then
+        return 0
+    fi
+    local tmp
+    tmp=$(mktemp)
+    jq --arg u "$us_code" --argjson m "$mr_iid" '
+        .feature_branches = (.feature_branches // {}) |
+        .feature_branches[$u] = (
+            (.feature_branches[$u] // {}) |
+            .mr_iid = $m
+        )
+    ' "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
+    echo "FEATURE_MR → US=$us_code mr_iid=$mr_iid"
+}
+
+# Output the MR iid cached for the current task's US, or empty.
+# Callers can test `[ -n "$(lookup_feature_mr)" ]` to decide whether to create
+# a new MR or reuse the existing one.
+lookup_feature_mr() {
+    local us_code strategy
+    strategy=$(_autonomy_config_get '.autonomy.branch_strategy' 'per-task')
+    if [ "$strategy" != "per-feature" ]; then
+        return 0
+    fi
+    us_code=$(jq -r '.current_task.user_story.code // ""' "$STATE_FILE")
+    [ -z "$us_code" ] && return 0
+    jq -r --arg u "$us_code" '.feature_branches[$u].mr_iid // empty' "$STATE_FILE"
+}
+
+# =============================================================================
 # State writing — handoff
 # =============================================================================
 
@@ -516,8 +792,65 @@ approve_qa_review() {
         echo "ERROR: Not at REVIEW gate (current: $current_gate)"
         return 1
     fi
+    local tmp
+    tmp=$(mktemp)
+    jq '.current_task.qa_approval = {source: "human", approved_at: (now | todate)}' "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
     set_gate "MERGE"
-    echo "GATE → MERGE (QA review approved)"
+    echo "GATE → MERGE (QA review approved — human)"
+}
+
+# auto_approve_qa_if_green
+# Advances REVIEW → MERGE when ALL hold:
+#   - current gate is REVIEW
+#   - work_type != hotfix
+#   - pipeline_status == "success"
+#   - autonomy.review.require_all_criteria_satisfied=true → criteria_satisfied == criteria_total (both > 0)
+#     When require_all_criteria_satisfied=false, this check is skipped (criteria get
+#     validated in EVIDENCE; REVIEW only gates pipeline+human policy).
+#   - autonomy.review.required_reviewers (default 0) == 0
+# On failure, prints reasons and returns 1.
+auto_approve_qa_if_green() {
+    local current_gate
+    current_gate=$(read_gate)
+    if [ "$current_gate" != "REVIEW" ]; then
+        echo "auto_approve_qa_if_green only valid at REVIEW (current: $current_gate)"
+        return 1
+    fi
+
+    local require_all required_reviewers
+    require_all=$(_autonomy_config_get '.autonomy.review.require_all_criteria_satisfied' 'true')
+    required_reviewers=$(_autonomy_config_get '.autonomy.review.required_reviewers' '0')
+
+    local work_type pipeline total satisfied
+    work_type=$(jq -r '.current_task.work_type // ""' "$STATE_FILE")
+    pipeline=$(jq -r '.current_task.git.pipeline_status // ""' "$STATE_FILE")
+    total=$(jq -r '.current_task.criteria_total // 0' "$STATE_FILE")
+    satisfied=$(jq -r '.current_task.criteria_satisfied // 0' "$STATE_FILE")
+
+    local reasons=()
+    [ "$work_type" = "hotfix" ]   && reasons+=("work_type=hotfix requires human review")
+    [ "$pipeline" != "success" ]  && reasons+=("pipeline_status=$pipeline (expected success)")
+    if [ "$required_reviewers" -gt 0 ] 2>/dev/null; then
+        reasons+=("required_reviewers=$required_reviewers (policy requires human)")
+    fi
+    if [ "$require_all" = "true" ] && [ "$total" -gt 0 ] 2>/dev/null && [ "$satisfied" -lt "$total" ] 2>/dev/null; then
+        reasons+=("acceptance criteria $satisfied/$total satisfied")
+    fi
+
+    if [ ${#reasons[@]} -eq 0 ]; then
+        local tmp
+        tmp=$(mktemp)
+        jq '.current_task.qa_approval = {source: "auto", approved_at: (now | todate)}' "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
+        set_gate "MERGE"
+        echo "GATE → MERGE (QA review auto-approved: pipeline green, criteria $satisfied/$total)"
+        return 0
+    fi
+
+    local joined
+    joined=$(printf '%s; ' "${reasons[@]}")
+    joined="${joined%; }"
+    echo "REVIEW auto-approve denied: $joined"
+    return 1
 }
 
 can_advance_to_merge() {

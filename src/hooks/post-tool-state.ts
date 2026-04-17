@@ -6,8 +6,11 @@
  * working with stale or misread task data.
  */
 
-import { readState, buildStateSummary } from '../state-reader.js';
+import { writeFileSync, mkdirSync, renameSync } from 'fs';
+import { join, dirname } from 'path';
+import { readState, buildStateSummary, buildPauseBlock } from '../state-reader.js';
 import { resetBlockCount } from './stop-guard.js';
+import { runHooks, buildHookReport } from '../extensions.js';
 
 export interface PostToolInput {
   tool_name?: string;
@@ -239,16 +242,42 @@ export function handlePostToolUse(data: PostToolInput): PostToolOutput {
         `Set readiness to "needs_refinement" in CLASSIFY and post a blocker.`
       );
     }
-    // Gap #5 — inject criteria progress so it survives compaction
+    // Gap #5 — persist full criteria cache to disk so compaction doesn't lose them
     try {
       const parsed = JSON.parse(output);
       const criteria: unknown[] = parsed?.data?.data?.acceptance_criteria ?? [];
-      if (criteria.length > 0) {
+      const taskUuid: string = parsed?.data?.data?.uuid ?? state.current_task?.uuid ?? '';
+      if (criteria.length > 0 && taskUuid) {
         const total = criteria.length;
         const satisfied = criteria.filter((c) => (c as Record<string, unknown>).is_satisfied === true).length;
         const pending = total - satisfied;
+
+        // Atomic snapshot to .teamx/criteria-cache.json — survives compaction
+        const cachePath = join(cwd, '.teamx', 'criteria-cache.json');
+        try {
+          mkdirSync(dirname(cachePath), { recursive: true });
+          const tmp = `${cachePath}.tmp`;
+          writeFileSync(tmp, JSON.stringify({
+            task_uuid: taskUuid,
+            total,
+            satisfied,
+            refreshed_at: new Date().toISOString(),
+            criteria: criteria.map((c) => {
+              const entry = c as Record<string, unknown>;
+              return {
+                sort_order: entry.sort_order,
+                description: entry.description,
+                is_satisfied: entry.is_satisfied === true,
+                evidence: entry.evidence ?? null,
+              };
+            }),
+          }, null, 2));
+          renameSync(tmp, cachePath);
+        } catch { /* best-effort cache — never fail the hook */ }
+
         messages.push(
           `[TeamX Criteria Progress] ${satisfied}/${total} satisfied${pending > 0 ? ` — ${pending} PENDING` : ' — all done'}.\n` +
+          `Snapshot cached at .teamx/criteria-cache.json (survives compaction).\n` +
           `Run: source .teamx/lib/state.sh && set_criteria_progress ${total} ${satisfied}`
         );
       }
@@ -294,6 +323,22 @@ export function handlePostToolUse(data: PostToolInput): PostToolOutput {
     if (modeDirective) {
       messages.push(modeDirective);
     }
+
+    // Extension hooks (Phase 3.5) — only on actual set_gate transitions.
+    const command = (toolInput.command as string) || '';
+    if (/set_gate/.test(command)) {
+      try {
+        const report = buildHookReport(runHooks(cwd, 'before', state.current_gate, state));
+        if (report) messages.push(report);
+      } catch { /* extensions never block the hook itself */ }
+    }
+  }
+
+  // Always surface an unresolved pause — even on non-state.sh tool calls —
+  // so the agent cannot drift past a flagged blocker.
+  const pauseBlock = buildPauseBlock(state);
+  if (pauseBlock) {
+    messages.push(pauseBlock);
   }
 
   if (messages.length === 0) {
@@ -311,5 +356,5 @@ export function handlePostToolUse(data: PostToolInput): PostToolOutput {
 
 function isStateShCommand(toolInput: Record<string, unknown>): boolean {
   const command = (toolInput.command as string) || '';
-  return /state\.sh/.test(command) && /\b(set_gate|set_current_task|set_work_type|set_readiness|approve_plan|complete_current_task)\b/.test(command);
+  return /state\.sh/.test(command) && /\b(set_gate|set_current_task|set_work_type|set_readiness|approve_plan|complete_current_task|auto_approve_plan_if_safe|auto_approve_qa_if_green|approve_qa_review|pause_for_decision|resolve_pause|set_task_user_story|register_feature_branch|register_feature_mr)\b/.test(command);
 }

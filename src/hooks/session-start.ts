@@ -8,7 +8,7 @@
 
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
-import { readState, buildStateSummary } from '../state-reader.js';
+import { readState, buildStateSummary, buildPauseBlock } from '../state-reader.js';
 
 export interface SessionStartInput {
   cwd?: string;
@@ -62,6 +62,49 @@ export function handleSessionStart(data: SessionStartInput): SessionStartOutput 
   // State summary
   const summary = buildStateSummary(state);
   messages.push(`[TeamX State Restored]\n${summary}`);
+
+  // Unresolved pause — surface as top-priority blocker on resume
+  const pauseBlock = buildPauseBlock(state);
+  if (pauseBlock) {
+    messages.push(pauseBlock);
+  }
+
+  // Criteria cache (Gap #5) — restore full acceptance criteria after compaction
+  // so the agent never has to "remember to refresh" manually.
+  if (state.current_task) {
+    const criteriaCachePath = join(cwd, '.teamx', 'criteria-cache.json');
+    if (existsSync(criteriaCachePath)) {
+      try {
+        const cache = JSON.parse(readFileSync(criteriaCachePath, 'utf-8'));
+        if (cache?.task_uuid === state.current_task.uuid && Array.isArray(cache.criteria)) {
+          const list = (cache.criteria as Array<{
+            sort_order?: number;
+            description?: string;
+            is_satisfied?: boolean;
+            evidence?: string | null;
+          }>)
+            .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+            .map((c, i) => {
+              const mark = c.is_satisfied ? '✓' : '○';
+              const idx = c.sort_order ?? i;
+              return `  [${idx}] ${mark} ${c.description ?? '(sin descripción)'}`;
+            })
+            .join('\n');
+          messages.push(
+            `[TeamX Criteria Restored — task ${cache.task_uuid}] ${cache.satisfied}/${cache.total} satisfied\n` +
+            list + '\n' +
+            `Cache timestamp: ${cache.refreshed_at}. ` +
+            `If the task changed upstream, call teamx_get_task_detail to refresh.`
+          );
+        }
+      } catch { /* ignore */ }
+    } else {
+      messages.push(
+        `[TeamX Criteria Missing] No local cache found for current task. ` +
+        `Call teamx_get_task_detail("${state.current_task.uuid}") before advancing.`
+      );
+    }
+  }
 
   // Handoff context
   const handoffPath = join(cwd, '.teamx', 'handoff.md');
@@ -128,6 +171,45 @@ export function handleSessionStart(data: SessionStartInput): SessionStartOutput 
       if (persona) {
         messages.push(`[TeamX Persona — Active]\n${persona}`);
       }
+    } catch { /* ignore */ }
+  }
+
+  // Constitution (Phase 3.4) — load project override first, then agency baseline.
+  // Surface as "MUST / MUST NOT" reminders so every session inherits the contract.
+  const constitutionSources: Array<{ label: string; path: string }> = [
+    { label: 'project', path: join(cwd, '.teamx', 'constitution.md') },
+  ];
+  if (process.env.CLAUDE_PLUGIN_ROOT) {
+    constitutionSources.push({
+      label: 'agency',
+      path: join(process.env.CLAUDE_PLUGIN_ROOT, 'teamx-lib', 'constitution.md'),
+    });
+  }
+  constitutionSources.push({
+    label: 'agency',
+    path: join(process.env.HOME || '', '.claude', 'teamx-devkit', 'teamx-lib', 'constitution.md'),
+  });
+  const seenScopes = new Set<string>();
+  for (const { label, path } of constitutionSources) {
+    if (seenScopes.has(label)) continue;
+    if (!existsSync(path)) continue;
+    try {
+      const raw = readFileSync(path, 'utf-8').trim();
+      if (!raw) continue;
+      const versionMatch = raw.match(/^version:\s*(.+)$/m);
+      const version = versionMatch ? versionMatch[1].trim() : 'unversioned';
+      const articles: string[] = [];
+      const articleRe = /^##\s+(Article\s+[IVXLC]+\s+—\s+.+?)$/gm;
+      let m: RegExpExecArray | null;
+      while ((m = articleRe.exec(raw)) !== null) {
+        articles.push(m[1]);
+      }
+      messages.push(
+        `[TeamX Constitution — ${label} v${version}]\n` +
+        articles.map(a => `- ${a}`).join('\n') +
+        `\nThese articles are MUST-level. Violations raise qa_warnings and block SDD approval.`
+      );
+      seenScopes.add(label);
     } catch { /* ignore */ }
   }
 

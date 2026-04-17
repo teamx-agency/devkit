@@ -53,14 +53,27 @@ const BASH_GATE_RULES: Array<{ pattern: RegExp; allowedGates: Gate[]; descriptio
     description: 'git merge',
   },
   {
-    pattern: /\bgit\s+checkout\s+-b\b/,
+    pattern: /\bgit\s+checkout\s+-[bB]\b/,
     allowedGates: ['CLASSIFY'],
-    description: 'git checkout -b (create branch)',
+    description: 'git checkout -b / -B (create or reset branch)',
+  },
+  {
+    // per-feature strategy (Phase 3.7) may reuse an existing branch for
+    // sibling tasks of the same User Story. Plain `git checkout <branch>`
+    // is only safe at CLASSIFY — never mid-IMPLEMENT/COMMIT/PUSH.
+    pattern: /\bgit\s+checkout\s+[^-\s]/,
+    allowedGates: ['CLASSIFY'],
+    description: 'git checkout <branch> (switch to existing branch)',
   },
   {
     pattern: /\bgit\s+switch\s+-c\b/,
     allowedGates: ['CLASSIFY'],
     description: 'git switch -c (create branch)',
+  },
+  {
+    pattern: /\bgit\s+switch\s+[^-\s]/,
+    allowedGates: ['CLASSIFY'],
+    description: 'git switch <branch> (switch to existing branch)',
   },
   {
     pattern: /verify\.sh\b/,

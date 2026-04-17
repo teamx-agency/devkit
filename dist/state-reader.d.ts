@@ -19,6 +19,20 @@ export interface PlanState {
     architecture_notes: string;
     created_at: string;
     approved: boolean;
+    deviates_from_sdd?: boolean;
+    files_touched?: number;
+}
+export interface PauseState {
+    category: string;
+    reason: string;
+    options?: string;
+    paused_at: string;
+    resolved: boolean;
+    resolved_at?: string;
+}
+export interface QaApprovalState {
+    source: 'human' | 'auto';
+    approved_at: string;
 }
 export interface TaskState {
     uuid: string;
@@ -35,6 +49,8 @@ export interface TaskState {
     criteria_total?: number;
     criteria_satisfied?: number;
     plan: PlanState | null;
+    pause?: PauseState | null;
+    qa_approval?: QaApprovalState | null;
     verification: Record<string, {
         status: string;
         output?: string;
@@ -72,3 +88,13 @@ export declare function isGate(value: string): value is Gate;
  * Mirrors read_state_summary() from state.sh.
  */
 export declare function buildStateSummary(state: TeamXState): string;
+/**
+ * Render the pause-for-decision block when the current task has an
+ * unresolved pause. Returns null when no active pause exists.
+ *
+ * This is the structured "significant interrupt" — distinct from mode
+ * directives, which fire on every gate transition. A pause means the
+ * agent hit a genuine categorised blocker; the workflow does not advance
+ * until `resolve_pause` is called.
+ */
+export declare function buildPauseBlock(state: TeamXState): string | null;

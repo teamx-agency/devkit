@@ -26,6 +26,22 @@ export interface PlanState {
   architecture_notes: string;
   created_at: string;
   approved: boolean;
+  deviates_from_sdd?: boolean;
+  files_touched?: number;
+}
+
+export interface PauseState {
+  category: string;
+  reason: string;
+  options?: string;
+  paused_at: string;
+  resolved: boolean;
+  resolved_at?: string;
+}
+
+export interface QaApprovalState {
+  source: 'human' | 'auto';
+  approved_at: string;
 }
 
 export interface TaskState {
@@ -43,6 +59,8 @@ export interface TaskState {
   criteria_total?: number;
   criteria_satisfied?: number;
   plan: PlanState | null;
+  pause?: PauseState | null;
+  qa_approval?: QaApprovalState | null;
   verification: Record<string, { status: string; output?: string }>;
   git: GitState;
 }
@@ -151,5 +169,27 @@ export function buildStateSummary(state: TeamXState): string {
     lines.push(`Milestone: "${m.title}" (${m.done_tasks}/${m.total_tasks})`);
   }
 
+  return lines.join('\n');
+}
+
+/**
+ * Render the pause-for-decision block when the current task has an
+ * unresolved pause. Returns null when no active pause exists.
+ *
+ * This is the structured "significant interrupt" — distinct from mode
+ * directives, which fire on every gate transition. A pause means the
+ * agent hit a genuine categorised blocker; the workflow does not advance
+ * until `resolve_pause` is called.
+ */
+export function buildPauseBlock(state: TeamXState): string | null {
+  const pause = state.current_task?.pause;
+  if (!pause || pause.resolved === true || !pause.category) return null;
+
+  const lines: string[] = [
+    `⏸  PAUSE-FOR-DECISION [${pause.category}]`,
+    pause.reason,
+  ];
+  if (pause.options) lines.push(`Opciones: ${pause.options}`);
+  lines.push('Workflow parado. Resuelve con el usuario y corre: source .teamx/lib/state.sh && resolve_pause');
   return lines.join('\n');
 }

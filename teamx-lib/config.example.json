@@ -1,0 +1,25 @@
+{
+  "_comment": "Copy to .teamx/config.json on first run. Every key is optional; the devkit falls back to documented defaults when absent. Numeric values are integers. Booleans must be literal true/false (not strings).",
+
+  "autonomy": {
+    "_comment_autonomy": "Controls how aggressively the devkit self-approves gate transitions and how feature work is grouped on git branches.",
+
+    "plan": {
+      "_comment": "auto_approve_plan_if_safe refuses auto-approval when the plan touches more than this many files. Raise for big refactors; never remove the check.",
+      "max_files": 8
+    },
+
+    "review": {
+      "_comment": "Gates the REVIEW → MERGE auto-advance. require_all_criteria_satisfied forces every acceptance criterion to be satisfied before auto-merge (recommended). required_reviewers >0 forces a human approve_qa_review call.",
+      "require_all_criteria_satisfied": true,
+      "required_reviewers": 0
+    },
+
+    "branch_strategy": "per-task"
+  },
+
+  "_branch_strategy_doc": {
+    "per-task": "Legacy behavior: CLASSIFY creates `<prefix><task-slug>` per task → one branch, one MR per task. Easiest to map to trivial refactors.",
+    "per-feature": "Spec-kit style: CLASSIFY creates `<prefix><project>-<us_code>-<us_slug>` once per User Story and every sibling task of the same US reuses the same branch and MR. MERGE must wait until every task of the US is `done`. Recommended for feature work with multiple tasks per story."
+  }
+}

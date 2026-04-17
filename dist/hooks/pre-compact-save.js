@@ -14,11 +14,27 @@ export function handlePreCompact(data) {
         return { continue: true, suppressOutput: true };
     }
     const summary = buildStateSummary(state);
-    // Gap #5 — remind agent to restore criteria after compaction
-    const criteriaReminder = state.current_task
-        ? `\n\n⚠ CRITERIA: After compaction, call teamx_get_task_detail("${state.current_task.uuid}") ` +
-            `to restore acceptance criteria status — criteria are NOT persisted in state.json.`
-        : '';
+    // Gap #5 — criteria snapshot is persisted to .teamx/criteria-cache.json on every
+    // get_task_detail call. SessionStart restores it automatically; we only flag a
+    // refresh if the cache is stale (> 30 min old) or missing.
+    let criteriaReminder = '';
+    if (state.current_task) {
+        const cachePath = join(cwd, '.teamx', 'criteria-cache.json');
+        let cacheOk = false;
+        if (existsSync(cachePath)) {
+            try {
+                const cache = JSON.parse(readFileSync(cachePath, 'utf-8'));
+                const refreshedAt = typeof cache?.refreshed_at === 'string' ? Date.parse(cache.refreshed_at) : NaN;
+                const ageMinutes = Number.isFinite(refreshedAt) ? (Date.now() - refreshedAt) / 60000 : Infinity;
+                cacheOk = cache?.task_uuid === state.current_task.uuid && ageMinutes <= 30;
+            }
+            catch { /* ignore */ }
+        }
+        criteriaReminder = cacheOk
+            ? `\n\n✓ CRITERIA: snapshot in .teamx/criteria-cache.json is fresh — SessionStart will restore it automatically after compaction.`
+            : `\n\n⚠ CRITERIA: cache stale or missing. After compaction, call teamx_get_task_detail("${state.current_task.uuid}") ` +
+                `to refresh — hook will persist the snapshot automatically on return.`;
+    }
     // Persona — remind agent to restore identity after compaction
     const personaPath = join(cwd, '.teamx', 'persona.yaml');
     const personaReminder = existsSync(personaPath)
