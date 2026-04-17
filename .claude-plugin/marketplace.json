@@ -9,7 +9,7 @@
     {
       "name": "devkit",
       "description": "Deterministic delivery workflow with 14 gates, automatic enforcement via hooks, agent persona, and TeamX MCP integration.",
-      "version": "2.0.0",
+      "version": "2.2.1",
       "author": {
         "name": "TeamX Agency"
       },
@@ -24,5 +24,5 @@
       ]
     }
   ],
-  "version": "2.0.0"
+  "version": "2.2.1"
 }

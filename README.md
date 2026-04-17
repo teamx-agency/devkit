@@ -14,7 +14,7 @@ Desde Claude Code, abre el plugin manager con `/plugin`:
 2. Tab **Discover** → busca `devkit` → instala
 
 El plugin instala automaticamente:
-- **Skills** — `/teamx-dev`, `/teamx-status`, `/teamx-review`, `/teamx-handoff`, `/teamx-health`
+- **Skills** — `/teamx-dev`, `/teamx-status`, `/teamx-review`, `/teamx-handoff`, `/teamx-health`, `/teamx-analyze`, `/teamx-constitution`
 - **Hooks** — 5 hooks de enforcement registrados via `hooks/hooks.json`
 - **MCP TeamX** — servidor `teamx` disponible en todas las sesiones
 
@@ -41,6 +41,23 @@ Configura el MCP de TeamX en las herramientas detectadas.
 ```
 
 Si responde con el dashboard de proyectos, la instalacion fue exitosa.
+
+---
+
+## Novedades v2.2 — Maturity Release
+
+| Capability | Como se activa | Donde vive |
+|------------|---------------|------------|
+| **Conditional auto-approve** en PLAN y REVIEW | Por default. Se salta al agente cuando todas las condiciones de seguridad se cumplen (plan no desvia SDD, files_touched <= threshold, pipeline green, criterios satisfechos, no hotfix). | `teamx-lib/state.sh` → `auto_approve_plan_if_safe`, `auto_approve_qa_if_green` |
+| **Pause-for-decision** (interrupcion significativa) | El agente registra `pause_for_decision "<categoria>" "<razon>" "<opciones>"` con una categoria reservada (`criterion-ambiguous`, `sdd-deviation`, `pipeline-failed-twice`, `blocking-architectural-choice`, `security-risk-detected`, `manual-review-required`). El workflow no avanza hasta `resolve_pause`. | `teamx-lib/state.sh` |
+| **Criteria cache** survive la compactacion | Automatico — tras `teamx_get_task_detail` se persiste `.teamx/criteria-cache.json`, y al SessionStart se restaura sin pedir nada al agente. | Hook `session-start` / post-tool |
+| **`/teamx-analyze`** — read-only cross-artifact check | Invocar con `/teamx-analyze PRJ-NNN`. Detecta ambiguedad, duplicacion, coverage gaps, constitution drift. | `skills/teamx-analyze/` + MCP `teamx_analyze_project` |
+| **`/teamx-constitution`** — baseline + override | `/teamx-constitution` para ver articulos activos. La agencia publica 8 articulos en `teamx-lib/constitution.md`; `.teamx/constitution.md` en el proyecto extiende (no debilita). | `skills/teamx-constitution/` + hook `session-start` |
+| **Extension hooks** declarativos | Escribir `.teamx/extensions.yml` con `before_<gate>` / `after_<gate>` commands. Sin tocar `state.sh`. | `src/extensions.ts` (Claude Code) + `configs/opencode/plugins/devkit.js` (OpenCode) |
+| **Branch strategy `per-feature`** (spec-kit style) | Setear en `.teamx/config.json`: `{"autonomy":{"branch_strategy":"per-feature"}}`. CLASSIFY reusa branch y MR entre tasks de la misma User Story. Default sigue `per-task` (backward compatible). | `teamx-lib/state.sh` → `resolve_task_branch`, `register_feature_branch`, `register_feature_mr` |
+| **User Story first-class** | Las tasks del backend teamx exponen `user_story.{code,title,priority}` en `teamx_get_workflow_state` / `teamx_get_task_detail`. El SELECT propone batch cuando hay ≥2 tasks `[P]` en la misma US. | Backend teamx (no cambios en devkit) |
+
+Todos los cambios son **backward-compatible**: sin configuracion extra, v2.2 se comporta como v2.1.
 
 ---
 

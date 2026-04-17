@@ -84,6 +84,23 @@ function buildStateSummary(state) {
   return lines.join('\n')
 }
 
+/**
+ * Render the pause-for-decision block when the current task has an
+ * unresolved pause. Port of state-reader.ts buildPauseBlock (Phase 1).
+ */
+function buildPauseBlock(state) {
+  const pause = state.current_task?.pause
+  if (!pause || pause.resolved === true || !pause.category) return null
+
+  const lines = [
+    `⏸  PAUSE-FOR-DECISION [${pause.category}]`,
+    pause.reason,
+  ]
+  if (pause.options) lines.push(`Opciones: ${pause.options}`)
+  lines.push('Workflow parado. Resuelve con el usuario y corre: source .teamx/lib/state.sh && resolve_pause')
+  return lines.join('\n')
+}
+
 // ============================================================
 // GATE RULES (ported from src/gate-rules.ts)
 // ============================================================
@@ -109,16 +126,20 @@ const TOOL_GATE_MAP = {
 }
 
 const BASH_GATE_RULES = [
-  { pattern: /\bgit\s+commit\b/,      allowedGates: ['COMMIT'],              description: 'git commit' },
-  { pattern: /\bgit\s+push\b/,        allowedGates: ['PUSH'],                description: 'git push' },
-  { pattern: /\bgit\s+merge\b/,       allowedGates: ['MERGE'],               description: 'git merge' },
-  { pattern: /\bgit\s+checkout\s+-b/, allowedGates: ['CLASSIFY'],            description: 'git checkout -b' },
-  { pattern: /\bgit\s+switch\s+-c/,   allowedGates: ['CLASSIFY'],            description: 'git switch -c' },
-  { pattern: /verify\.sh\b/,          allowedGates: ['VERIFY'],              description: 'verify.sh' },
-  { pattern: /\bgit\s+reset\b/,       allowedGates: ['CLASSIFY', 'IMPLEMENT'], description: 'git reset' },
-  { pattern: /\bgit\s+rebase\b/,      allowedGates: [],                      description: 'git rebase' },
-  { pattern: /\bgit\s+clean\b/,       allowedGates: ['CLASSIFY', 'IMPLEMENT'], description: 'git clean' },
-  { pattern: /\bgit\s+restore\b/,     allowedGates: ['CLASSIFY', 'IMPLEMENT'], description: 'git restore' },
+  { pattern: /\bgit\s+commit\b/,          allowedGates: ['COMMIT'],              description: 'git commit' },
+  { pattern: /\bgit\s+push\b/,            allowedGates: ['PUSH'],                description: 'git push' },
+  { pattern: /\bgit\s+merge\b/,           allowedGates: ['MERGE'],               description: 'git merge' },
+  // Phase 3.7 — per-feature strategy may checkout -B (reset to tracking)
+  // or plain `git checkout <branch>` to reuse a sibling task's feature branch.
+  { pattern: /\bgit\s+checkout\s+-[bB]\b/,allowedGates: ['CLASSIFY'],            description: 'git checkout -b / -B (create or reset branch)' },
+  { pattern: /\bgit\s+checkout\s+[^-\s]/, allowedGates: ['CLASSIFY'],            description: 'git checkout <branch> (switch)' },
+  { pattern: /\bgit\s+switch\s+-c\b/,     allowedGates: ['CLASSIFY'],            description: 'git switch -c (create branch)' },
+  { pattern: /\bgit\s+switch\s+[^-\s]/,   allowedGates: ['CLASSIFY'],            description: 'git switch <branch>' },
+  { pattern: /verify\.sh\b/,              allowedGates: ['VERIFY'],              description: 'verify.sh' },
+  { pattern: /\bgit\s+reset\b/,           allowedGates: ['CLASSIFY', 'IMPLEMENT'], description: 'git reset' },
+  { pattern: /\bgit\s+rebase\b/,          allowedGates: [],                      description: 'git rebase' },
+  { pattern: /\bgit\s+clean\b/,           allowedGates: ['CLASSIFY', 'IMPLEMENT'], description: 'git clean' },
+  { pattern: /\bgit\s+restore\b/,         allowedGates: ['CLASSIFY', 'IMPLEMENT'], description: 'git restore' },
 ]
 
 const SKIP_GATES = {
@@ -267,10 +288,168 @@ const GATE_MODE_MAP = {
   RETROSPECTIVE: { mode: 'REVIEW',    hint: 'At least 1 insight. Push lessons with teamx_push_lessons. Update or delete stale lessons with teamx_update_lesson / teamx_delete_lesson. Capture ADRs, conventions and stack decisions with teamx_set_knowledge before advancing.' },
 }
 
+// ============================================================
+// EXTENSIONS LOADER (ported from src/extensions.ts — Phase 3.5)
+// ============================================================
+// Declarative hook system: plugins declare before_<gate>/after_<gate>
+// commands in .teamx/extensions.yml. Keeps custom delivery hooks out
+// of state.sh while giving teams a controlled extension surface.
+// ============================================================
+
+const EXTENSIONS_PATH = '.teamx/extensions.yml'
+const EXT_MAX_OUTPUT_BYTES = 4000
+const EXT_DEFAULT_TIMEOUT_MS = 10_000
+
+function parseExtensionsYaml(raw) {
+  const lines = raw.split(/\r?\n/)
+  const hooks = {}
+  let currentHook = null
+  let currentEntry = null
+
+  const flushEntry = () => {
+    if (currentHook && currentEntry && currentEntry.extension && currentEntry.command) {
+      hooks[currentHook].push({
+        extension: currentEntry.extension,
+        command: currentEntry.command,
+        optional: currentEntry.optional === true,
+      })
+    }
+    currentEntry = null
+  }
+
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/#.*$/, '').trimEnd()
+    if (line.trim() === '') continue
+    if (line === 'hooks:') continue
+
+    const hookMatch = line.match(/^ {2}([a-z_]+):$/i)
+    if (hookMatch) {
+      flushEntry()
+      currentHook = hookMatch[1]
+      hooks[currentHook] = hooks[currentHook] ?? []
+      continue
+    }
+    const listStart = line.match(/^ {4}-\s*extension:\s*(.+)$/)
+    if (listStart) {
+      flushEntry()
+      currentEntry = { extension: listStart[1].trim().replace(/^["']|["']$/g, '') }
+      continue
+    }
+    const fieldMatch = line.match(/^ {6}([a-z_]+):\s*(.+)$/)
+    if (fieldMatch && currentEntry) {
+      const key = fieldMatch[1]
+      let value = fieldMatch[2].trim().replace(/^["']|["']$/g, '')
+      if (key === 'optional') value = value === 'true'
+      currentEntry[key] = value
+    }
+  }
+  flushEntry()
+  return { hooks }
+}
+
+function loadExtensions(cwd) {
+  const path = join(cwd, EXTENSIONS_PATH)
+  if (!existsSync(path)) return null
+  try {
+    return parseExtensionsYaml(readFileSync(path, 'utf-8'))
+  } catch {
+    return null
+  }
+}
+
+function truncateExtOutput(s) {
+  if (!s || s.length <= EXT_MAX_OUTPUT_BYTES) return s
+  return s.slice(0, EXT_MAX_OUTPUT_BYTES) + '\n…[truncated]'
+}
+
+async function runExtensionHooks(cwd, phase, gate, state) {
+  const file = loadExtensions(cwd)
+  if (!file) return []
+  const key = `${phase}_${gate.toLowerCase()}`
+  const hooks = file.hooks?.[key] ?? []
+  if (hooks.length === 0) return []
+
+  // Lazy-load child_process only when extensions are configured (OpenCode
+  // sandbox may not always expose it; fail gracefully).
+  let spawnSync
+  try {
+    const mod = await import('child_process')
+    spawnSync = mod.spawnSync
+  } catch {
+    return []
+  }
+
+  const payload = JSON.stringify({
+    gate,
+    phase,
+    project_code: state.project_code,
+    task_uuid: state.current_task?.uuid ?? null,
+    state_summary: {
+      current_gate: state.current_gate,
+      task_title: state.current_task?.title ?? null,
+      work_type: state.current_task?.work_type ?? null,
+    },
+  })
+
+  const results = []
+  for (const hook of hooks) {
+    try {
+      const proc = spawnSync('sh', ['-c', hook.command], {
+        cwd,
+        input: payload,
+        timeout: EXT_DEFAULT_TIMEOUT_MS,
+        encoding: 'utf-8',
+      })
+      const exitCode = proc.status ?? (proc.signal ? 124 : 1)
+      results.push({
+        extension: hook.extension,
+        phase, gate,
+        exit_code: exitCode,
+        stdout: truncateExtOutput(proc.stdout ?? ''),
+        stderr: truncateExtOutput(proc.stderr ?? ''),
+        optional: hook.optional,
+        ok: exitCode === 0,
+      })
+    } catch (err) {
+      results.push({
+        extension: hook.extension,
+        phase, gate,
+        exit_code: -1,
+        stdout: '',
+        stderr: err?.message ?? String(err),
+        optional: hook.optional,
+        ok: false,
+      })
+    }
+  }
+  return results
+}
+
+function buildExtensionReport(results) {
+  if (!results || results.length === 0) return null
+  const lines = [`[TeamX Extensions — ${results[0].phase}_${results[0].gate.toLowerCase()}]`]
+  for (const r of results) {
+    const label = r.ok ? '✓' : r.optional ? '⚠ (optional)' : '✗ BLOCKING'
+    lines.push(`${label} ${r.extension} (exit ${r.exit_code})`)
+    if (r.stdout?.trim() !== '') lines.push(`  stdout: ${r.stdout.trim()}`)
+    if (!r.ok && r.stderr?.trim() !== '') lines.push(`  stderr: ${r.stderr.trim()}`)
+  }
+  const mandatoryFailures = results.filter(r => !r.ok && !r.optional)
+  if (mandatoryFailures.length > 0) {
+    lines.push('')
+    lines.push(
+      `Mandatory extension(s) failed: ${mandatoryFailures.map(r => r.extension).join(', ')}. ` +
+      `Register pause_for_decision "security-risk-detected" or "manual-review-required" before advancing.`
+    )
+  }
+  return lines.join('\n')
+}
+
 function isStateShCommand(args) {
   const command = (args?.command) || ''
+  // Keep in sync with src/hooks/post-tool-state.ts isStateShCommand.
   return /state\.sh/.test(command) &&
-    /\b(set_gate|set_current_task|set_work_type|set_readiness|approve_plan|complete_current_task)\b/.test(command)
+    /\b(set_gate|set_current_task|set_work_type|set_readiness|approve_plan|complete_current_task|auto_approve_plan_if_safe|auto_approve_qa_if_green|approve_qa_review|pause_for_decision|resolve_pause|set_task_user_story|register_feature_branch|register_feature_mr)\b/.test(command)
 }
 
 function buildPostToolContext(toolName, toolArgs, toolOutput, cwd) {
@@ -284,11 +463,23 @@ function buildPostToolContext(toolName, toolArgs, toolOutput, cwd) {
 
   const messages = []
 
-  if (toolName === 'mcp__teamx__teamx_get_workflow_state' && state.current_task) {
-    messages.push(
-      `[TeamX] Task in state: "${state.current_task.title}" (${state.current_task.uuid}). ` +
-      `Call teamx_get_task_detail for full description and acceptance criteria.`
-    )
+  if (toolName === 'mcp__teamx__teamx_get_workflow_state') {
+    if (state.current_task) {
+      messages.push(
+        `[TeamX] Task in state: "${state.current_task.title}" (${state.current_task.uuid}). ` +
+        `Call teamx_get_task_detail for full description and acceptance criteria.`
+      )
+    }
+    // Gap #1 — server-authoritative qa_warnings (duplicate criteria, etc.)
+    try {
+      const outputStr = typeof toolOutput === 'string' ? toolOutput : JSON.stringify(toolOutput)
+      const parsed = JSON.parse(outputStr)
+      const warnings = parsed?.data?.data?.qa_warnings ?? []
+      if (Array.isArray(warnings) && warnings.length > 0) {
+        const serverWarnings = warnings.filter(w => typeof w === 'string')
+        if (serverWarnings.length > 0) messages.push(serverWarnings.join('\n\n'))
+      }
+    } catch { /* ignore */ }
   }
 
   if (toolName === 'mcp__teamx__teamx_get_task_detail') {
@@ -301,16 +492,61 @@ function buildPostToolContext(toolName, toolArgs, toolOutput, cwd) {
         `Set readiness to "needs_refinement" in CLASSIFY and post a blocker.`
       )
     }
+    // Phase 1 — persist criteria snapshot to .teamx/criteria-cache.json so
+    // acceptance criteria survive context compaction without manual refresh.
     try {
       const parsed = JSON.parse(outputStr)
       const criteria = parsed?.data?.data?.acceptance_criteria ?? []
-      if (criteria.length > 0) {
+      const taskUuid = parsed?.data?.data?.uuid ?? state.current_task?.uuid ?? ''
+      if (criteria.length > 0 && taskUuid) {
         const total = criteria.length
         const satisfied = criteria.filter(c => c.is_satisfied === true).length
         const pending = total - satisfied
+
+        try {
+          const cachePath = join(cwd, '.teamx', 'criteria-cache.json')
+          mkdirSync(dirname(cachePath), { recursive: true })
+          const tmp = cachePath + '.tmp'
+          writeFileSync(tmp, JSON.stringify({
+            task_uuid: taskUuid,
+            total,
+            satisfied,
+            refreshed_at: new Date().toISOString(),
+            criteria: criteria.map(c => ({
+              sort_order: c.sort_order,
+              description: c.description,
+              is_satisfied: c.is_satisfied === true,
+              evidence: c.evidence ?? null,
+            })),
+          }, null, 2))
+          // atomic-ish: rename via fs (import at top)
+          writeFileSync(cachePath, readFileSync(tmp, 'utf-8'))
+          try { mkdirSync(dirname(tmp), { recursive: true }) } catch { /* noop */ }
+        } catch { /* best-effort cache — never fail the hook */ }
+
         messages.push(
           `[TeamX Criteria Progress] ${satisfied}/${total} satisfied${pending > 0 ? ` — ${pending} PENDING` : ' — all done'}.\n` +
+          `Snapshot cached at .teamx/criteria-cache.json (survives compaction).\n` +
           `Run: source .teamx/lib/state.sh && set_criteria_progress ${total} ${satisfied}`
+        )
+      }
+    } catch { /* ignore */ }
+  }
+
+  // Phase 3 — confirmation after criteria update so agent knows to re-check readiness.
+  if (toolName === 'mcp__teamx__teamx_update_acceptance_criteria') {
+    try {
+      const outputStr = typeof toolOutput === 'string' ? toolOutput : JSON.stringify(toolOutput)
+      const parsed = JSON.parse(outputStr)
+      const criteria = parsed?.data?.data?.acceptance_criteria
+        ?? parsed?.data?.acceptance_criteria
+        ?? []
+      const mode = (toolArgs?.mode) || 'replace'
+      if (criteria.length > 0) {
+        messages.push(
+          `[TeamX Criteria Updated — ${mode.toUpperCase()}]\n` +
+          `${criteria.length} criteria now on task. ` +
+          `Verify each is Given/When/Then and has a concrete pass/fail condition before advancing to IMPLEMENT.`
         )
       }
     } catch { /* ignore */ }
@@ -327,6 +563,12 @@ function buildPostToolContext(toolName, toolArgs, toolOutput, cwd) {
           `The criterion was NOT marked satisfied. Verify and retry.`
         )
       }
+      if (inner?.data?.already_satisfied === true) {
+        messages.push(
+          `[TeamX] Criterio ya estaba satisfecho previamente (already_satisfied=true). ` +
+          `Evidencia existente: "${inner.data.existing_evidence ?? 'n/a'}".`
+        )
+      }
     } catch { /* ignore */ }
   }
 
@@ -339,6 +581,11 @@ function buildPostToolContext(toolName, toolArgs, toolOutput, cwd) {
       messages.push(`[TeamX Mode → ${entry.mode}]\nGate: ${state.current_gate} — ${entry.hint}`)
     }
   }
+
+  // Phase 1 — always surface an unresolved pause even on non-state.sh calls so
+  // the agent cannot drift past a flagged blocker.
+  const pauseBlock = buildPauseBlock(state)
+  if (pauseBlock) messages.push(pauseBlock)
 
   return messages.length > 0 ? messages.join('\n\n') : null
 }
@@ -399,11 +646,25 @@ export const DevKitPlugin = async ({ directory }) => {
         const toolArgs = input.args ?? null
         const toolOutput = output?.result ?? null
 
+        const messages = []
         const context = buildPostToolContext(toolName, toolArgs, toolOutput, cwd)
-        if (context && output) {
-          // Append devkit context to the tool output so the LLM sees it
+        if (context) messages.push(context)
+
+        // Phase 3.5 — on set_gate transitions, run before_<newGate> extensions.
+        if (toolName === 'Bash' && isStateShCommand(toolArgs) && /set_gate/.test(toolArgs?.command || '')) {
+          const state = readState(cwd)
+          if (state) {
+            try {
+              const results = await runExtensionHooks(cwd, 'before', state.current_gate, state)
+              const report = buildExtensionReport(results)
+              if (report) messages.push(report)
+            } catch { /* extensions never block the hook itself */ }
+          }
+        }
+
+        if (messages.length > 0 && output) {
           const existing = typeof output.result === 'string' ? output.result : JSON.stringify(output.result ?? '')
-          output.result = existing + '\n\n' + context
+          output.result = existing + '\n\n' + messages.join('\n\n')
         }
       } catch {
         // Never crash on post-hook — swallow all errors
@@ -426,6 +687,43 @@ export const DevKitPlugin = async ({ directory }) => {
 
         // State summary
         messages.push(`[TeamX State Restored]\n${buildStateSummary(state)}`)
+
+        // Phase 1 — surface unresolved pause as top-priority blocker on resume
+        const pauseBlock = buildPauseBlock(state)
+        if (pauseBlock) messages.push(pauseBlock)
+
+        // Phase 1 — restore full acceptance criteria from cache so compaction
+        // doesn't force a manual teamx_get_task_detail call on every resume.
+        if (state.current_task) {
+          const criteriaCachePath = join(cwd, '.teamx', 'criteria-cache.json')
+          if (existsSync(criteriaCachePath)) {
+            try {
+              const cache = JSON.parse(readFileSync(criteriaCachePath, 'utf-8'))
+              if (cache?.task_uuid === state.current_task.uuid && Array.isArray(cache.criteria)) {
+                const list = cache.criteria
+                  .slice()
+                  .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+                  .map((c, i) => {
+                    const mark = c.is_satisfied ? '✓' : '○'
+                    const idx = c.sort_order ?? i
+                    return `  [${idx}] ${mark} ${c.description ?? '(sin descripción)'}`
+                  })
+                  .join('\n')
+                messages.push(
+                  `[TeamX Criteria Restored — task ${cache.task_uuid}] ${cache.satisfied}/${cache.total} satisfied\n` +
+                  list + '\n' +
+                  `Cache timestamp: ${cache.refreshed_at}. ` +
+                  `If the task changed upstream, call teamx_get_task_detail to refresh.`
+                )
+              }
+            } catch { /* ignore */ }
+          } else {
+            messages.push(
+              `[TeamX Criteria Missing] No local cache found for current task. ` +
+              `Call teamx_get_task_detail("${state.current_task.uuid}") before advancing.`
+            )
+          }
+        }
 
         // Handoff
         const handoffPath = join(cwd, '.teamx', 'handoff.md')
@@ -477,6 +775,45 @@ export const DevKitPlugin = async ({ directory }) => {
           if (persona) messages.push(`[TeamX Persona — Active]\n${persona}`)
         }
 
+        // Phase 3.4 — Constitution injection. Project override takes priority
+        // over agency baseline. Both are loaded if present, labelled by scope.
+        const constitutionSources = [
+          { label: 'project', path: join(cwd, '.teamx', 'constitution.md') },
+        ]
+        if (process.env.TEAMX_DEVKIT_ROOT) {
+          constitutionSources.push({
+            label: 'agency',
+            path: join(process.env.TEAMX_DEVKIT_ROOT, 'teamx-lib', 'constitution.md'),
+          })
+        }
+        if (process.env.HOME) {
+          constitutionSources.push({
+            label: 'agency',
+            path: join(process.env.HOME, 'node_modules', 'teamx-devkit', 'teamx-lib', 'constitution.md'),
+          })
+        }
+        const seenScopes = new Set()
+        for (const { label, path } of constitutionSources) {
+          if (seenScopes.has(label)) continue
+          if (!existsSync(path)) continue
+          try {
+            const raw = readFileSync(path, 'utf-8').trim()
+            if (!raw) continue
+            const versionMatch = raw.match(/^version:\s*(.+)$/m)
+            const version = versionMatch ? versionMatch[1].trim() : 'unversioned'
+            const articles = []
+            const articleRe = /^##\s+(Article\s+[IVXLC]+\s+—\s+.+?)$/gm
+            let m
+            while ((m = articleRe.exec(raw)) !== null) articles.push(m[1])
+            messages.push(
+              `[TeamX Constitution — ${label} v${version}]\n` +
+              articles.map(a => `- ${a}`).join('\n') +
+              `\nThese articles are MUST-level. Violations raise qa_warnings and block SDD approval.`
+            )
+            seenScopes.add(label)
+          } catch { /* ignore */ }
+        }
+
         // Experience layer (modes, voice)
         const expFiles = [
           { file: 'modes.yaml', label: 'Modes' },
@@ -512,9 +849,25 @@ export const DevKitPlugin = async ({ directory }) => {
 
         const summary = buildStateSummary(state)
 
-        const criteriaReminder = state.current_task
-          ? `\n\n⚠ CRITERIA: After compaction, call teamx_get_task_detail("${state.current_task.uuid}") to restore acceptance criteria status.`
-          : ''
+        // Phase 1 — criteria cache freshness. session.created auto-restores
+        // from .teamx/criteria-cache.json; we only prompt the agent when the
+        // cache is stale (>30min) or absent.
+        let criteriaReminder = ''
+        if (state.current_task) {
+          const cachePath = join(cwd, '.teamx', 'criteria-cache.json')
+          let cacheOk = false
+          if (existsSync(cachePath)) {
+            try {
+              const cache = JSON.parse(readFileSync(cachePath, 'utf-8'))
+              const refreshedAt = typeof cache?.refreshed_at === 'string' ? Date.parse(cache.refreshed_at) : NaN
+              const ageMinutes = Number.isFinite(refreshedAt) ? (Date.now() - refreshedAt) / 60000 : Infinity
+              cacheOk = cache?.task_uuid === state.current_task.uuid && ageMinutes <= 30
+            } catch { /* ignore */ }
+          }
+          criteriaReminder = cacheOk
+            ? `\n\n✓ CRITERIA: snapshot in .teamx/criteria-cache.json is fresh — session.created will restore it automatically after compaction.`
+            : `\n\n⚠ CRITERIA: cache stale or missing. After compaction, call teamx_get_task_detail("${state.current_task.uuid}") — the hook will persist the snapshot automatically on return.`
+        }
 
         const experienceReminder = existsSync(join(cwd, '.teamx', 'persona.yaml'))
           ? `\n\n⚠ PERSONA: Re-read .teamx/persona.yaml, .teamx/modes.yaml, .teamx/voice.md to restore behavior contract.`
