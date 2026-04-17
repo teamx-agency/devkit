@@ -42,6 +42,14 @@ IDLE → INIT → SELECT → CLASSIFY → [PLAN] → IMPLEMENT → VERIFY → CO
 2. Call `teamx_get_project_detail(code)` and `teamx_get_workflow_state(code)` in parallel
 3. Call `gitlab_get_repo_context(code)` — get repo URL, confirm local clone
 4. If `.teamx/` missing: create it, download lib files from GitHub, run `bash .teamx/lib/init.sh <repo_path>`
+4b. If `.teamx/config.json` missing, ask the user inline (only these two questions; single answer each):
+    - **Branch strategy**: `per-feature` (spec-kit style, one branch+MR per User Story, recommended) | `per-task` (legacy, one branch+MR per task).
+    - **Review strictness**: `strict` (require all acceptance criteria satisfied — recommended) | `lax` (allow merge with unsatisfied criteria).
+    Write `.teamx/config.json`:
+    ```json
+    {"autonomy":{"branch_strategy":"<per-feature|per-task>","plan":{"max_files":8},"review":{"require_all_criteria_satisfied":<true|false>,"required_reviewers":0}}}
+    ```
+    Skip silently if the file exists. Never overwrite.
 5. Load SDD session if exists; surface constitution and tech stack
 6. Read experience files: `persona.yaml`, `modes.yaml`, `rituals.yaml`, `voice.md`, `work_types.yaml`
 6b. If project has a defined client: call `teamx_get_stack_experience(project_code)` → surface `frequency_summary` to inform architecture recommendations

@@ -71,6 +71,37 @@ IDLE → INIT → SELECT → CLASSIFY → [PLAN] → IMPLEMENT → VERIFY → CO
      `persona.yaml`, `modes.yaml`, `rituals.yaml`, `voice.md`, `work_types.yaml`
    - `chmod +x .teamx/lib/*.sh`
    - Add `.teamx/` to `.gitignore`
+4b. **Bootstrap `.teamx/config.json`** (only if missing; otherwise skip silently):
+    The autonomy/branch-strategy config used to be a manual step — it isn't anymore. On first INIT, if `.teamx/config.json` does not exist, ask the user exactly TWO questions via `AskUserQuestion` (single-select, no multi-select):
+
+    **Q1 — Branch strategy**
+    - Header: `Branch strategy`
+    - Options:
+      - `Per-feature (spec-kit style, recommended)` — one branch + MR per User Story; sibling tasks reuse the branch; MERGE waits until the whole US is done. Best for feature work with multiple tasks per story.
+      - `Per-task (legacy)` — one branch + MR per task; simplest for one-off fixes, refactors, or chores that don't belong to a US.
+
+    **Q2 — Acceptance criteria enforcement at REVIEW**
+    - Header: `Review strictness`
+    - Options:
+      - `Strict — require all criteria satisfied (recommended)` — auto-merge only when every acceptance criterion is satisfied. Aligns with Article V of the Constitution.
+      - `Lax — allow merge with unsatisfied criteria` — auto-merge when pipeline is green even if some criteria remain. Use only when criteria are aspirational rather than blocking.
+
+    After the user answers, write `.teamx/config.json` verbatim:
+    ```json
+    {
+      "autonomy": {
+        "branch_strategy": "<per-feature|per-task>",
+        "plan": { "max_files": 8 },
+        "review": {
+          "require_all_criteria_satisfied": <true|false>,
+          "required_reviewers": 0
+        }
+      }
+    }
+    ```
+    Confirm in one line: `✓ .teamx/config.json written — branch_strategy=<value>, review_strictness=<value>. Change later by editing the file.`
+
+    Do NOT ask these questions on subsequent INIT runs — the file's existence is the idempotency marker. Do NOT overwrite an existing `config.json`, even if its values look suspicious (the user edited them on purpose).
 5. Run: `bash .teamx/lib/init.sh <repo_path>` — extracts CI checks into `ci-profile.json` (stack-agnostic)
    - Review output: if `checks: []` or commands look wrong, read `.gitlab-ci.yml` and populate manually
 6. Call `teamx_list_sdd_sessions(project_code)`:
