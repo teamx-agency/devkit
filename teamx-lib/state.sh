@@ -1126,3 +1126,58 @@ print_cycle_times() {
     ' "$STATE_FILE" 2>/dev/null
     echo "═══════════════════════════════════════════════════════"
 }
+
+# =============================================================================
+# CLI dispatcher — invoke state.sh as a script (no `source` needed)
+# =============================================================================
+# Why: sourcing a script triggers harness-level "evaluates arguments as shell
+# code" warnings in Claude Code, prompting for confirmation on every call even
+# with permission allowlists. Invoking state.sh as a regular executable
+# dispatches to the requested function without the source-warning penalty.
+#
+# Usage (new, preferred):
+#   bash .teamx/lib/state.sh <function> [args...]
+#   # e.g.  bash .teamx/lib/state.sh set_gate SELECT
+#   #      bash .teamx/lib/state.sh auto_approve_plan_if_safe
+#   #      bash .teamx/lib/state.sh pause_for_decision "criterion-ambiguous" "..." "..."
+#
+# Sourcing (legacy, still works):
+#   source .teamx/lib/state.sh && set_gate "SELECT"
+#
+# The dispatcher runs only when state.sh is invoked directly, not when sourced.
+# =============================================================================
+
+# Robust detection: `return` exits with 0 only when called from inside a
+# sourced script or function. Executed-as-script context makes `return` fail,
+# triggering the dispatcher. This is more reliable than comparing BASH_SOURCE
+# to $0, which the harness's shell wrapper can conflate.
+if ! (return 0 2>/dev/null); then
+    if [ $# -lt 1 ]; then
+        echo "Usage: $0 <function> [args...]" >&2
+        echo "Run '$0 --list' to see available functions." >&2
+        exit 64
+    fi
+
+    # Special: list available functions for discovery / tab completion.
+    if [ "$1" = "--list" ] || [ "$1" = "-l" ]; then
+        declare -F | awk '{print $3}' | grep -v '^_' | sort
+        exit 0
+    fi
+
+    fn="$1"; shift
+    if ! declare -F "$fn" > /dev/null 2>&1; then
+        echo "Unknown function: $fn" >&2
+        echo "Run '$0 --list' to see available functions." >&2
+        exit 65
+    fi
+
+    # Reject calls to internal helpers (prefixed with underscore).
+    case "$fn" in
+        _*)
+            echo "Function '$fn' is internal and cannot be invoked via the CLI." >&2
+            exit 66
+            ;;
+    esac
+
+    "$fn" "$@"
+fi

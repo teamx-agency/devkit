@@ -284,5 +284,8 @@ export function handlePostToolUse(data) {
 }
 function isStateShCommand(toolInput) {
     const command = toolInput.command || '';
+    // Matches both `source .teamx/lib/state.sh && FN ...` (legacy) and
+    // `bash .teamx/lib/state.sh FN ...` (v2.2.3+ CLI dispatcher — preferred,
+    // avoids Claude Code's "source evaluates shell code" warning).
     return /state\.sh/.test(command) && /\b(set_gate|set_current_task|set_work_type|set_readiness|approve_plan|complete_current_task|auto_approve_plan_if_safe|auto_approve_qa_if_green|approve_qa_review|pause_for_decision|resolve_pause|set_task_user_story|register_feature_branch|register_feature_mr)\b/.test(command);
 }

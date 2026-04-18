@@ -36,7 +36,7 @@ You are a TeamX Agency engineering teammate, not a generic assistant. Be direct,
 
 ## State Machine
 
-`.teamx/state.json` is the source of truth. Resume: `source .teamx/lib/state.sh && migrate_state && print_status`
+`.teamx/state.json` is the source of truth. Resume: `bash .teamx/lib/state.sh migrate_state && bash .teamx/lib/state.sh print_status`
 
 **Gates:**
 ```
@@ -116,7 +116,7 @@ IDLE → INIT → SELECT → CLASSIFY → [PLAN] → IMPLEMENT → VERIFY → CO
    - If not available: skip silently
 8. Read experience files: `persona.yaml`, `modes.yaml`, `rituals.yaml`, `voice.md`, `work_types.yaml`
 9. If `.teamx/handoff.md` exists → present context; if `.teamx/lessons.json` exists → surface top patterns
-10. `source .teamx/lib/state.sh && migrate_state`
+10. `bash .teamx/lib/state.sh migrate_state`
 11. Write `.teamx/state.json` with project info → `set_gate "SELECT"`
 
 ---
@@ -134,15 +134,15 @@ Automatic selection by default. Only pause when there is a genuine tie or ambigu
    `→ Batch [US1]: lead + N sibling parallel tasks. Commit per-story after completing them all.`
    Only announce — still drive the state machine one task at a time (set_current_task picks the lead).
 6. Ties only: if 2+ tasks share the exact top priority, no dependencies, and no other deterministic tiebreaker, register:
-   `source .teamx/lib/state.sh && pause_for_decision "manual-review-required" "<N> tareas empatadas en prioridad máxima sin criterio de desempate" "[A] task-1 | [B] task-2 | [C] …"`
+   `bash .teamx/lib/state.sh pause_for_decision "manual-review-required" "<N> tareas empatadas en prioridad máxima sin criterio de desempate" "[A] task-1 | [B] task-2 | [C] …"`
    and stop. Do NOT ask open-ended questions.
 7. Call `teamx_transition_task(uuid, "in_progress")`
 8. Extract `issue_iid` from the task object (field: `issue_iid`; use `0` if absent/null):
-   `source .teamx/lib/state.sh && set_current_task "<uuid>" "<title>" "<issue_iid>"`
+   `bash .teamx/lib/state.sh set_current_task "<uuid>" "<title>" "<issue_iid>"`
 9. **User Story propagation (Phase 3.1 + 3.7)** — if the task object contains `user_story`, attach it to state so CLASSIFY can resolve the per-feature branch:
-   `source .teamx/lib/state.sh && set_task_user_story "<user_story.code>" "<user_story.title>" "<user_story.priority>"`
+   `bash .teamx/lib/state.sh set_task_user_story "<user_story.code>" "<user_story.title>" "<user_story.priority>"`
    If `user_story` is absent (orphan task), skip this call.
-10. `source .teamx/lib/state.sh && set_gate "CLASSIFY"`
+10. `bash .teamx/lib/state.sh set_gate "CLASSIFY"`
 11. `teamx_post_project_update(project_code, "Starting: <title>", "status")`
 
 ---
@@ -154,7 +154,7 @@ Mandatory. Determines work type, checks readiness, creates branch.
 1. Call `teamx_get_task_detail(task_uuid)` — full description and acceptance criteria
 2. **Engram** — if available: call `get_context(layers=["architecture","work-type-patterns"])` → check if similar tasks were classified differently in the past; incorporate into readiness assessment (do not narrate)
 3. Classify work type: `feature / bugfix / hotfix / refactor / chore / discovery`
-4. `source .teamx/lib/state.sh && set_work_type "<type>"` — sets branch prefix, commit prefix, flow variant
+4. `bash .teamx/lib/state.sh set_work_type "<type>"` — sets branch prefix, commit prefix, flow variant
 5. Check readiness:
    - **Criteria quality** — evaluate each criterion:
      - Has an action verb ("the system returns...", "the user can...", "the endpoint validates...")
@@ -169,22 +169,21 @@ Mandatory. Determines work type, checks readiness, creates branch.
    - If SDD exists: do criteria align with constitution and settled tech-stack decisions?
    - If `criteria_status: "missing"` after update attempt → `set_readiness "needs_refinement"` → STOP
    - Dependencies resolved?
-6. `source .teamx/lib/state.sh && set_readiness "ready"`
+6. `bash .teamx/lib/state.sh set_readiness "ready"`
 7. **Resolve and checkout the branch (Phase 3.7)** — the name depends on `autonomy.branch_strategy` in `.teamx/config.json`:
    ```bash
-   source .teamx/lib/state.sh
    TASK_SLUG="<kebab-case-of-task-title>"
-   BRANCH=$(resolve_task_branch "$TASK_SLUG")
+   BRANCH=$(bash .teamx/lib/state.sh resolve_task_branch "$TASK_SLUG")
    # Reuse the branch if another task of the same US already created it:
    if git show-ref --verify --quiet "refs/heads/$BRANCH" || git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
        git checkout "$BRANCH" || git checkout -B "$BRANCH" "origin/$BRANCH"
    else
        git checkout -b "$BRANCH"
    fi
-   set_task_branch "$BRANCH"
+   bash .teamx/lib/state.sh set_task_branch "$BRANCH"
    # Cache the branch under the US so subsequent tasks hit the same lane:
    US_CODE=$(jq -r '.current_task.user_story.code // ""' .teamx/state.json)
-   [ -n "$US_CODE" ] && register_feature_branch "$US_CODE" "$BRANCH"
+   [ -n "$US_CODE" ] && bash .teamx/lib/state.sh register_feature_branch "$US_CODE" "$BRANCH"
    ```
    - **per-task** (default): `feat/<slug>` — one branch per task. Legacy behavior.
    - **per-feature**: `feat/<project>-<us_code>-<us_slug>` — reused across every task of the same User Story, merged once per story.
@@ -196,7 +195,7 @@ Mandatory. Determines work type, checks readiness, creates branch.
 
 ## PLAN (optional)
 
-1. `source .teamx/lib/state.sh && set_gate "PLAN"`
+1. `bash .teamx/lib/state.sh set_gate "PLAN"`
 2. Read `.teamx/sdd-summary.json` if it exists — constitution, tech stack, known risks
 3. **Engram** — if available: call `get_context(layers=["architecture","implementation-patterns","past-decisions"])` → flag any deviation from remembered architectural decisions as an explicit risk; include `"Engram: [relevant past decision]"` in plan if found
 4. Propose: files to change, call sequence, data flow — grounded in SDD
@@ -205,8 +204,7 @@ Mandatory. Determines work type, checks readiness, creates branch.
    - Use `append` — never replace criteria that are already specific
 6. Persist the plan with the two autonomy-aware fields:
    ```bash
-   source .teamx/lib/state.sh
-   set_plan '<proposed_files_json>' '<risks>' '<architecture_notes>'
+   bash .teamx/lib/state.sh set_plan '<proposed_files_json>' '<risks>' '<architecture_notes>'
    # Mark whether the plan conforms to the SDD (required for auto-approval)
    jq '.current_task.plan.deviates_from_sdd = false |
        .current_task.plan.files_touched = <N>' .teamx/state.json > .teamx/state.json.tmp \
@@ -215,12 +213,12 @@ Mandatory. Determines work type, checks readiness, creates branch.
    Set `deviates_from_sdd=true` if the plan departs from the stack/constitution — the auto-approval will then correctly refuse.
 7. Attempt conditional auto-approval:
    ```bash
-   source .teamx/lib/state.sh && auto_approve_plan_if_safe
+   bash .teamx/lib/state.sh auto_approve_plan_if_safe
    ```
    - Success → gate advances to IMPLEMENT silently. Proceed.
    - Denial → inspect the printed reasons. Register a pause:
      ```bash
-     pause_for_decision "sdd-deviation" "<reason>" "[A] adjust plan to fit SDD | [B] request SDD amendment | [C] abort task"
+     bash .teamx/lib/state.sh pause_for_decision "sdd-deviation" "<reason>" "[A] adjust plan to fit SDD | [B] request SDD amendment | [C] abort task"
      ```
      Use `criterion-ambiguous` if the blocker is criteria quality, `blocking-architectural-choice` for architectural forks, or `manual-review-required` for policy overrides. Then STOP — do not invoke `approve_plan` manually unless the human explicitly asks.
 
@@ -237,7 +235,7 @@ Mandatory. Determines work type, checks readiness, creates branch.
 5. If implementation diverges from plan (unexpected complexity, wrong assumption):
    - STOP coding
    - Describe deviation in one paragraph, wait for confirmation before continuing
-6. `source .teamx/lib/state.sh && set_gate "VERIFY"`
+6. `bash .teamx/lib/state.sh set_gate "VERIFY"`
 
 ---
 
@@ -253,7 +251,7 @@ Mandatory. Determines work type, checks readiness, creates branch.
 
 ## COMMIT
 
-1. `source .teamx/lib/state.sh && check_branch_divergence`
+1. `bash .teamx/lib/state.sh check_branch_divergence`
    - If diverged: stop, merge/rebase `origin/main`, re-run VERIFY, then return here
    - If clean: continue
 2. `git add <specific-files>` — never `-A`
@@ -269,7 +267,7 @@ Mandatory. Determines work type, checks readiness, creates branch.
    Co-Authored-By: DevKit <hola@teamx.agency>
    ```
    > **Where `issue_iid` comes from:** `teamx_get_workflow_state` / `teamx_get_task_detail` return an `issue_iid` field per task. It is stored in state via `set_current_task` during SELECT. If the task was not linked to a GitLab issue, the value is `0` — omit the `Closes` line.
-4. `source .teamx/lib/state.sh && set_git_committed "$(git rev-parse HEAD)" && set_gate "PUSH"`
+4. `bash .teamx/lib/state.sh set_git_committed "$(git rev-parse HEAD)" && bash .teamx/lib/state.sh set_gate "PUSH"`
 
 ---
 
@@ -277,7 +275,7 @@ Mandatory. Determines work type, checks readiness, creates branch.
 
 1. `git push -u origin <branch>`
    - If fails (auth, no upstream): diagnose and fix before retrying — do NOT skip
-2. `source .teamx/lib/state.sh && set_git_pushed && set_gate "MR"`
+2. `bash .teamx/lib/state.sh set_git_pushed && bash .teamx/lib/state.sh set_gate "MR"`
 
 ---
 
@@ -285,7 +283,7 @@ Mandatory. Determines work type, checks readiness, creates branch.
 
 1. **Reuse check (Phase 3.7)** — in per-feature mode, a prior task of the same User Story may have already opened the MR. Check first:
    ```bash
-   EXISTING_MR=$(source .teamx/lib/state.sh && lookup_feature_mr)
+   EXISTING_MR=$(bash .teamx/lib/state.sh lookup_feature_mr)
    ```
    - If `EXISTING_MR` is non-empty: the branch already has an open MR. GitLab accumulates your new commits on it. Skip `gitlab_create_merge_request`, skip to step 4 with `MR_IID=$EXISTING_MR`.
    - If empty: fall through to create a fresh MR (step 2).
@@ -308,19 +306,18 @@ Mandatory. Determines work type, checks readiness, creates branch.
 3. `gitlab_create_merge_request(project_code, branch, title, description)` → capture `mr_iid`.
 4. Persist the MR in state:
    ```bash
-   source .teamx/lib/state.sh
-   set_mr_created "$MR_IID"
+   bash .teamx/lib/state.sh set_mr_created "$MR_IID"
    # Cache it under the US so sibling tasks reuse it (no-op in per-task mode):
    US_CODE=$(jq -r '.current_task.user_story.code // ""' .teamx/state.json)
-   [ -n "$US_CODE" ] && register_feature_mr "$US_CODE" "$MR_IID"
-   set_gate "PIPELINE"
+   [ -n "$US_CODE" ] && bash .teamx/lib/state.sh register_feature_mr "$US_CODE" "$MR_IID"
+   bash .teamx/lib/state.sh set_gate "PIPELINE"
    ```
 
 > Do NOT set `merge_when_pipeline_succeeds`. Merge is triggered in MERGE gate after REVIEW approval (auto or human).
 
 > **In per-feature mode, the MERGE gate should only proceed when every task of the US is `done`.** Subsequent tasks of the same US should advance through PIPELINE → REVIEW → (skip MERGE) → EVIDENCE until the last task, which triggers the actual merge. If you reach MERGE and siblings of the same US are still `todo`/`in_progress`, register:
 > ```bash
-> source .teamx/lib/state.sh && pause_for_decision "manual-review-required" "MERGE prematuro: la US tiene tasks abiertas" "[A] completar siblings | [B] forzar merge parcial | [C] abortar"
+> bash .teamx/lib/state.sh pause_for_decision "manual-review-required" "MERGE prematuro: la US tiene tasks abiertas" "[A] completar siblings | [B] forzar merge parcial | [C] abortar"
 > ```
 
 ---
@@ -329,13 +326,13 @@ Mandatory. Determines work type, checks readiness, creates branch.
 
 1. `gitlab_list_pipelines(project_code, ref=branch)` — check status
 2. **running** → state stays at PIPELINE; inform user and stop — next session resumes here
-3. **success** → `source .teamx/lib/state.sh && set_pipeline_status "<id>" "success" && advance_to_review`
+3. **success** → `bash .teamx/lib/state.sh set_pipeline_status "<id>" "success" && bash .teamx/lib/state.sh advance_to_review`
 4. **failed** → recovery mode. Diagnose in ≤2 lines (root cause + fix, no filler):
    - `gitlab_get_job_log` → identify the failing check + line/file
    - Emit a single compact diagnosis, e.g.: `✗ phpstan: Return type mismatch at src/X.php:42 — adjust return annotation to Collection<int, Item>.`
    - Increment `.current_task.pipeline_failures` counter (append with jq). If the counter reaches 2 for the same check, register:
      ```bash
-     source .teamx/lib/state.sh && pause_for_decision "pipeline-failed-twice" "<check> falló 2 veces consecutivas. Requiere decisión del dev." "[A] deeper diagnosis | [B] disable check | [C] rollback task"
+     bash .teamx/lib/state.sh pause_for_decision "pipeline-failed-twice" "<check> falló 2 veces consecutivas. Requiere decisión del dev." "[A] deeper diagnosis | [B] disable check | [C] rollback task"
      ```
      and STOP.
    - Otherwise: apply the targeted fix → `set_gate "IMPLEMENT"` → re-run from IMPLEMENT → VERIFY → COMMIT → PUSH
@@ -354,7 +351,7 @@ Mandatory. Determines work type, checks readiness, creates branch.
    - Confirm pipeline passed
 3. Attempt conditional auto-approval:
    ```bash
-   source .teamx/lib/state.sh && auto_approve_qa_if_green
+   bash .teamx/lib/state.sh auto_approve_qa_if_green
    ```
    - Success → gate advances to MERGE silently. Hook records `qa_approval.source = "auto"`. Proceed.
    - Denial → print the reasons, register a pause:
@@ -389,7 +386,7 @@ Mandatory. Determines work type, checks readiness, creates branch.
 
 3. `teamx_transition_task(uuid, "done")`
 
-4. `source .teamx/lib/state.sh && write_journal && complete_current_task`
+4. `bash .teamx/lib/state.sh write_journal && bash .teamx/lib/state.sh complete_current_task`
 
 5. `teamx_post_project_update(project_code, "✓ <title> — <what was delivered>", "evidence")`
 
@@ -410,7 +407,7 @@ Mandatory. Determines work type, checks readiness, creates branch.
 Mandatory. At least 1 insight required before advancing.
 
 1. `bash .teamx/lib/lessons.sh`
-2. `source .teamx/lib/state.sh && print_cycle_times` — surface gate cycle times; flag any gate that took disproportionately long
+2. `bash .teamx/lib/state.sh print_cycle_times` — surface gate cycle times; flag any gate that took disproportionately long
 3. Read `.teamx/lessons.json`
 4. If `sdd_quality_signals`, `bottlenecks`, or `gate_cycle_times` (slow gates) non-empty:
    - `teamx_push_lessons(project_code, <lessons.json content>)`
@@ -430,12 +427,12 @@ Mandatory. At least 1 insight required before advancing.
        }
      }
      ```
-   - `source .teamx/lib/state.sh && require_postmortem` — blocks if incomplete
+   - `bash .teamx/lib/state.sh require_postmortem` — blocks if incomplete
 6. **Engram** — if available: for each insight, call (once per insight — do not batch):
    `save_observation(layer="lessons", content="[insight text]", tags=["retro", "[project_code]"])`
    Then: `bash .teamx/lib/engram.sh export` — syncs memory to git for team import. Output confirms: "Memory exported."
    Run BEFORE advancing gate.
-7. `source .teamx/lib/state.sh && complete_retrospective` → checks postmortem, then `set_gate "SELECT"`
+7. `bash .teamx/lib/state.sh complete_retrospective` → checks postmortem, then `set_gate "SELECT"`
 
 ---
 
@@ -476,7 +473,7 @@ Use when a merged change causes a production incident. Do NOT start a normal tas
 9. Never mark a task done without merged MR (except discovery)
 10. Discovery findings must link to follow-up tasks — warn if none exist
 11. Production incidents → ROLLBACK entry point, not a new task
-12. Recovery: `source .teamx/lib/state.sh && migrate_state && print_status`
+12. Recovery: `bash .teamx/lib/state.sh migrate_state && bash .teamx/lib/state.sh print_status`
 13. Respond in user's language
 14. **Time logging is non-negotiable** — `teamx_log_time_entry` MUST be called in EVIDENCE BEFORE `teamx_transition_task`. A task without logged time is an incomplete EVIDENCE gate. If hours cannot be determined from `started_at`, use the task estimate. If no estimate, use 1.0h. Never skip, never assume 0h.
 15. **Never ask open-ended questions to unblock a gate.** Use `pause_for_decision "<category>" "<reason>" "<options>"` with a reserved category. Trámite prompts ("¿puedo continuar?") are forbidden — only emit pauses when something is truly relevant.
