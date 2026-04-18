@@ -97,7 +97,7 @@ function buildPauseBlock(state) {
     pause.reason,
   ]
   if (pause.options) lines.push(`Opciones: ${pause.options}`)
-  lines.push('Workflow parado. Resuelve con el usuario y corre: source .teamx/lib/state.sh && resolve_pause')
+  lines.push('Workflow parado. Resuelve con el usuario y corre: bash .teamx/lib/state.sh resolve_pause')
   return lines.join('\n')
 }
 
@@ -530,7 +530,7 @@ function buildPostToolContext(toolName, toolArgs, toolOutput, cwd) {
         messages.push(
           `[TeamX Criteria Progress] ${satisfied}/${total} satisfied${pending > 0 ? ` — ${pending} PENDING` : ' — all done'}.\n` +
           `Snapshot cached at .teamx/criteria-cache.json (survives compaction).\n` +
-          `Run: source .teamx/lib/state.sh && set_criteria_progress ${total} ${satisfied}`
+          `Run: bash .teamx/lib/state.sh set_criteria_progress ${total} ${satisfied}`
         )
       }
     } catch { /* ignore */ }
@@ -892,7 +892,7 @@ export const DevKitPlugin = async ({ directory }) => {
           `${summary}` +
           criteriaReminder +
           experienceReminder +
-          `\n\nRun: source .teamx/lib/state.sh && print_status`
+          `\n\nRun: bash .teamx/lib/state.sh print_status`
 
         if (output) {
           output.summary = (output.summary ? output.summary + '\n\n' : '') + checkpoint

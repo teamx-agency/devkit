@@ -94,7 +94,7 @@ export function handlePreCompact(data: PreCompactInput): PreCompactOutput {
         engramReminder +
         experienceReminder +
         `\n\nRe-read .teamx/state.json for full context.\n` +
-        `Run: source .teamx/lib/state.sh && print_status`,
+        `Run: bash .teamx/lib/state.sh print_status`,
     },
   };
 }

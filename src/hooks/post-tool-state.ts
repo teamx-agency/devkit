@@ -278,7 +278,7 @@ export function handlePostToolUse(data: PostToolInput): PostToolOutput {
         messages.push(
           `[TeamX Criteria Progress] ${satisfied}/${total} satisfied${pending > 0 ? ` — ${pending} PENDING` : ' — all done'}.\n` +
           `Snapshot cached at .teamx/criteria-cache.json (survives compaction).\n` +
-          `Run: source .teamx/lib/state.sh && set_criteria_progress ${total} ${satisfied}`
+          `Run: bash .teamx/lib/state.sh set_criteria_progress ${total} ${satisfied}`
         );
       }
     } catch { /* ignore */ }

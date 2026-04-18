@@ -165,7 +165,7 @@ export function handleStop(data: StopInput): StopOutput {
     decision: 'block',
     reason: `[TeamX Stop Guard] Work in progress — cannot stop.\n\n${summary}\n\n` +
       `Complete the current gate (${gate}) before stopping. ` +
-      `Run: source .teamx/lib/state.sh && print_status` +
+      `Run: bash .teamx/lib/state.sh print_status` +
       (count > 0 ? `\n(Block ${count + 1}/${MAX_CONSECUTIVE_BLOCKS} — safety valve at ${MAX_CONSECUTIVE_BLOCKS})` : ''),
   };
 }

@@ -1,6 +1,6 @@
 {
   "name": "teamx-devkit",
-  "version": "2.2.4",
+  "version": "2.2.5",
   "description": "TeamX Delivery OS — Hook-enforced state machine for Claude Code and OpenCode",
   "type": "module",
   "main": "dist/index.js",

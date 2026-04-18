@@ -190,6 +190,6 @@ export function buildPauseBlock(state: TeamXState): string | null {
     pause.reason,
   ];
   if (pause.options) lines.push(`Opciones: ${pause.options}`);
-  lines.push('Workflow parado. Resuelve con el usuario y corre: source .teamx/lib/state.sh && resolve_pause');
+  lines.push('Workflow parado. Resuelve con el usuario y corre: bash .teamx/lib/state.sh resolve_pause');
   return lines.join('\n');
 }
