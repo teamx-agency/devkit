@@ -1,7 +1,7 @@
 {
   "name": "devkit",
   "description": "Deterministic delivery workflow with 14 gates, hooks, and agent persona.",
-  "version": "2.2.3",
+  "version": "2.2.4",
   "author": {"name": "TeamX Agency"},
   "license": "MIT",
   "skills": ["./skills"]

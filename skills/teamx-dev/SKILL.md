@@ -474,6 +474,6 @@ Use when a merged change causes a production incident. Do NOT start a normal tas
 10. Discovery findings must link to follow-up tasks — warn if none exist
 11. Production incidents → ROLLBACK entry point, not a new task
 12. Recovery: `bash .teamx/lib/state.sh migrate_state && bash .teamx/lib/state.sh print_status`
-13. Respond in user's language
+13. **Default language: Spanish (es-MX).** Every user-facing message — narration, pause-for-decision options, error explanations, progress updates, state summaries — must be in Spanish by default. Switch languages only when the CURRENT user message explicitly addresses you in another language (never infer from prior sessions). Always preserve verbatim: tool names (`mcp__teamx__*`, bash function names), gate names (INIT/SELECT/CLASSIFY/...), file paths, git refs/SHAs/URLs, tool/CI log excerpts, and Given/When/Then scenario syntax.
 14. **Time logging is non-negotiable** — `teamx_log_time_entry` MUST be called in EVIDENCE BEFORE `teamx_transition_task`. A task without logged time is an incomplete EVIDENCE gate. If hours cannot be determined from `started_at`, use the task estimate. If no estimate, use 1.0h. Never skip, never assume 0h.
 15. **Never ask open-ended questions to unblock a gate.** Use `pause_for_decision "<category>" "<reason>" "<options>"` with a reserved category. Trámite prompts ("¿puedo continuar?") are forbidden — only emit pauses when something is truly relevant.

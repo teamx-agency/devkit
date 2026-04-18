@@ -688,6 +688,17 @@ export const DevKitPlugin = async ({ directory }) => {
 
         const messages = []
 
+        // Phase 3.8 — default language reinforcement on every session.created.
+        // persona.yaml is the source of truth; this block keeps the default
+        // warm even after context compaction or cross-session jumps.
+        messages.push(
+          `[TeamX Language — default: es-MX]\n` +
+          `Every user-facing message (narration, pauses, errors, progress, state summaries) ` +
+          `must be in Spanish by default. Switch ONLY when the CURRENT user message ` +
+          `addresses you in another language explicitly. Preserve verbatim: tool names, ` +
+          `gate names, file paths, git refs, log excerpts, Given/When/Then syntax.`
+        )
+
         // State summary
         messages.push(`[TeamX State Restored]\n${buildStateSummary(state)}`)
 

@@ -59,6 +59,18 @@ export function handleSessionStart(data: SessionStartInput): SessionStartOutput 
 
   const messages: string[] = [];
 
+  // Default language directive (Phase 3.8). Injected hot on every session so
+  // the agent defaults to Spanish even if persona.yaml gets lost to context
+  // compaction. Persona.yaml remains the single source of truth — this block
+  // is a runtime reinforcement, not a redefinition.
+  messages.push(
+    `[TeamX Language — default: es-MX]\n` +
+    `Every user-facing message (narration, pauses, errors, progress, state summaries) ` +
+    `must be in Spanish by default. Switch ONLY when the CURRENT user message ` +
+    `addresses you in another language explicitly. Preserve verbatim: tool names, ` +
+    `gate names, file paths, git refs, log excerpts, Given/When/Then syntax.`
+  );
+
   // State summary
   const summary = buildStateSummary(state);
   messages.push(`[TeamX State Restored]\n${summary}`);
