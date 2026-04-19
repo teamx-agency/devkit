@@ -19,6 +19,41 @@ import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs'
 import { join, dirname } from 'path'
 
 // ============================================================
+// EXPERIENCE BASE RESOLVER
+// ============================================================
+// Resolves the directory holding persona.yaml / modes.yaml / voice.md.
+// Mirror of dist/hooks/session-start.js for parity with Claude Code:
+//   1. Project's .teamx/lib/   — downloaded by /teamx-dev INIT (per-project pin)
+//   2. Project's .teamx/       — manual override convention
+//   3. $TEAMX_DEVKIT_ROOT/teamx-lib/  — explicit env override
+//   4. cwd/node_modules/teamx-devkit/teamx-lib/  — local npm install
+//   5. $HOME/node_modules/teamx-devkit/teamx-lib/ — global npm install
+// First location containing any of the three experience files wins.
+function resolveExperienceBase(cwd) {
+  const candidates = [
+    join(cwd, '.teamx', 'lib'),
+    join(cwd, '.teamx'),
+    ...(process.env.TEAMX_DEVKIT_ROOT
+      ? [join(process.env.TEAMX_DEVKIT_ROOT, 'teamx-lib')]
+      : []),
+    join(cwd, 'node_modules', 'teamx-devkit', 'teamx-lib'),
+    ...(process.env.HOME
+      ? [join(process.env.HOME, 'node_modules', 'teamx-devkit', 'teamx-lib')]
+      : []),
+  ]
+  for (const base of candidates) {
+    if (
+      existsSync(join(base, 'persona.yaml')) ||
+      existsSync(join(base, 'modes.yaml')) ||
+      existsSync(join(base, 'voice.md'))
+    ) {
+      return base
+    }
+  }
+  return null
+}
+
+// ============================================================
 // STATE READER (ported from src/state-reader.ts)
 // ============================================================
 
@@ -782,11 +817,17 @@ export const DevKitPlugin = async ({ directory }) => {
           } catch { /* ignore */ }
         }
 
-        // Persona
-        const personaPath = join(cwd, '.teamx', 'persona.yaml')
-        if (existsSync(personaPath)) {
-          const persona = readFileSync(personaPath, 'utf-8').trim()
-          if (persona) messages.push(`[TeamX Persona — Active]\n${persona}`)
+        // Persona — resolved through the experience cascade so a fresh install
+        // (no /teamx-dev INIT yet) still loads the agency baseline from
+        // node_modules/teamx-devkit/teamx-lib/. Project-local .teamx/ wins
+        // when it exists.
+        const _expBase = resolveExperienceBase(cwd)
+        if (_expBase) {
+          const personaPath = join(_expBase, 'persona.yaml')
+          if (existsSync(personaPath)) {
+            const persona = readFileSync(personaPath, 'utf-8').trim()
+            if (persona) messages.push(`[TeamX Persona — Active]\n${persona}`)
+          }
         }
 
         // Phase 3.4 — Constitution injection. Project override takes priority
@@ -828,16 +869,19 @@ export const DevKitPlugin = async ({ directory }) => {
           } catch { /* ignore */ }
         }
 
-        // Experience layer (modes, voice)
-        const expFiles = [
-          { file: 'modes.yaml', label: 'Modes' },
-          { file: 'voice.md',   label: 'Voice' },
-        ]
-        for (const { file, label } of expFiles) {
-          const p = join(cwd, '.teamx', file)
-          if (existsSync(p)) {
-            const content = readFileSync(p, 'utf-8').trim()
-            if (content) messages.push(`[TeamX ${label}]\n${content}`)
+        // Experience layer (modes, voice) — same cascade as persona above.
+        // _expBase is reused from the persona block.
+        if (_expBase) {
+          const expFiles = [
+            { file: 'modes.yaml', label: 'Modes' },
+            { file: 'voice.md',   label: 'Voice' },
+          ]
+          for (const { file, label } of expFiles) {
+            const p = join(_expBase, file)
+            if (existsSync(p)) {
+              const content = readFileSync(p, 'utf-8').trim()
+              if (content) messages.push(`[TeamX ${label}]\n${content}`)
+            }
           }
         }
 

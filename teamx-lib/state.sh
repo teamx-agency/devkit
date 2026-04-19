@@ -30,6 +30,11 @@ JOURNAL_DIR="${TEAMX_DIR}/journal"
 LESSONS_FILE="${TEAMX_DIR}/lessons.json"
 HANDOFF_FILE="${TEAMX_DIR}/handoff.md"
 
+# TeamX visual identity (palette + glyph-prefixed loggers). Sourced lazily
+# so scripts that don't need branding stay lean. See teamx-lib/branding.sh.
+_BRANDING_SH="${TEAMX_DIR}/lib/branding.sh"
+[ -f "$_BRANDING_SH" ] && source "$_BRANDING_SH"
+
 # =============================================================================
 # State reading — core
 # =============================================================================
@@ -894,6 +899,69 @@ check_branch_divergence() {
 }
 
 # =============================================================================
+# Article IX — Secrets hygiene (run before COMMIT)
+# =============================================================================
+# Blocks the commit if any forbidden path is currently staged. Returns 0 when
+# the staging area is clean, 1 when it is not. The forbidden list mirrors the
+# Constitution's Article IX. Edit the constitution AND this list together —
+# never one without the other.
+#
+# Usage:
+#   bash .teamx/lib/state.sh check_no_secrets_staged
+#
+# On block, the function prints each offending path and the unstage command
+# the agent must run (`git restore --staged <path>`). The agent does NOT
+# unstage automatically — that decision belongs to the human when an unusual
+# path matched.
+check_no_secrets_staged() {
+    if ! git rev-parse --git-dir >/dev/null 2>&1; then
+        echo "⚠  Not inside a git repository — skipping secrets check"
+        return 0
+    fi
+
+    # Anchored ERE patterns. Each matches a full repo-relative path (any depth).
+    # Keep these in lockstep with constitution.md Article IX.
+    local pattern='(^|/)(\.mcp\.json|\.env|\.env\..+|credentials.*\.json|service-account.*\.json|id_rsa|id_ed25519|.*\.pem|.*\.key|.*\.p12|.*\.pfx)$|(^|/)(\.teamx|\.claude|\.opencode|secrets|tokens)(/|$)'
+
+    local staged
+    staged=$(git diff --cached --name-only 2>/dev/null || true)
+
+    if [ -z "$staged" ]; then
+        echo "✓ No staged changes — nothing to check"
+        return 0
+    fi
+
+    local offenders
+    offenders=$(echo "$staged" | grep -E "$pattern" || true)
+
+    if [ -z "$offenders" ]; then
+        echo "✓ Staging area is clean of forbidden paths"
+        return 0
+    fi
+
+    echo "✗ SECRETS HYGIENE VIOLATION — Constitution Article IX"
+    echo ""
+    echo "  The following staged paths are forbidden from commits:"
+    echo ""
+    while IFS= read -r path; do
+        [ -z "$path" ] && continue
+        echo "    • $path"
+    done <<< "$offenders"
+    echo ""
+    echo "  Unstage them before continuing:"
+    while IFS= read -r path; do
+        [ -z "$path" ] && continue
+        echo "    git restore --staged \"$path\""
+    done <<< "$offenders"
+    echo ""
+    echo "  Then ensure .gitignore covers them so this cannot recur."
+    echo "  If a forbidden file was already pushed in a prior commit, treat"
+    echo "  this as a credential-leak incident: rotate the secret FIRST, then"
+    echo "  rewrite history."
+    return 1
+}
+
+# =============================================================================
 # Improvement #2 — Hotfix postmortem enforcement (run in RETROSPECTIVE)
 # =============================================================================
 
@@ -1061,38 +1129,73 @@ migrate_state() {
 # =============================================================================
 
 print_status() {
-    echo "═══════════════════════════════════════════════════════"
-    echo "  TeamX Dev State Machine (v${STATE_VERSION})"
-    echo "═══════════════════════════════════════════════════════"
-    echo "  Project:    $(jq -r '.project_code + " — " + .project_name' "$STATE_FILE")"
-    echo "  Gate:       $(read_gate)"
-    echo "  Milestone:  $(jq -r '.active_milestone.title + " (" + (.active_milestone.done_tasks|tostring) + "/" + (.active_milestone.total_tasks|tostring) + ")"' "$STATE_FILE")"
-    if [ "$(read_current_task_uuid)" != "" ]; then
-        echo "  Task:       $(read_current_task_title)"
-        local wt
-        wt=$(read_work_type)
-        [ -n "$wt" ] && echo "  Type:       $wt ($(read_flow_variant))"
-        local rd
-        rd=$(read_readiness)
-        [ -n "$rd" ] && echo "  Readiness:  $rd"
-        echo "  Branch:     $(read_current_branch)"
-        local plan_status
-        plan_status=$(jq -r '.current_task.plan.approved // empty' "$STATE_FILE" 2>/dev/null)
-        [ -n "$plan_status" ] && echo "  Plan:       approved=$plan_status"
-        local criteria_total criteria_satisfied
-        criteria_total=$(jq -r '.current_task.criteria_total // 0' "$STATE_FILE" 2>/dev/null)
-        criteria_satisfied=$(jq -r '.current_task.criteria_satisfied // 0' "$STATE_FILE" 2>/dev/null)
-        if [ "$criteria_total" -gt 0 ] 2>/dev/null; then
-            echo "  Criteria:   ${criteria_satisfied}/${criteria_total} satisfied"
+    # Use TeamX branding helpers if branding.sh was sourced (default); fall
+    # back to plain echo so this still works in stripped environments.
+    if declare -F tx_header >/dev/null 2>&1; then
+        tx_header "Dev State Machine v${STATE_VERSION}"
+        tx_kv "Project"   "$(jq -r '.project_code + " — " + .project_name' "$STATE_FILE")"
+        tx_kv "Gate"      "$(read_gate)"
+        tx_kv "Milestone" "$(jq -r '.active_milestone.title + " (" + (.active_milestone.done_tasks|tostring) + "/" + (.active_milestone.total_tasks|tostring) + ")"' "$STATE_FILE")"
+        if [ "$(read_current_task_uuid)" != "" ]; then
+            tx_kv "Task"   "$(read_current_task_title)"
+            local wt
+            wt=$(read_work_type)
+            [ -n "$wt" ] && tx_kv "Type" "$wt ($(read_flow_variant))"
+            local rd
+            rd=$(read_readiness)
+            [ -n "$rd" ] && tx_kv "Readiness" "$rd"
+            tx_kv "Branch" "$(read_current_branch)"
+            local plan_status
+            plan_status=$(jq -r '.current_task.plan.approved // empty' "$STATE_FILE" 2>/dev/null)
+            [ -n "$plan_status" ] && tx_kv "Plan" "approved=$plan_status"
+            local criteria_total criteria_satisfied
+            criteria_total=$(jq -r '.current_task.criteria_total // 0' "$STATE_FILE" 2>/dev/null)
+            criteria_satisfied=$(jq -r '.current_task.criteria_satisfied // 0' "$STATE_FILE" 2>/dev/null)
+            if [ "$criteria_total" -gt 0 ] 2>/dev/null; then
+                tx_kv "Criteria" "${criteria_satisfied}/${criteria_total} satisfied"
+            fi
+            tx_kv "Verify" "$(jq -r '[.current_task.verification | to_entries[] | .key + "=" + .value.status] | join(", ")' "$STATE_FILE" 2>/dev/null || echo "pending")"
+            tx_kv "Git"    "committed=$(jq -r '.current_task.git.committed' "$STATE_FILE") pushed=$(jq -r '.current_task.git.pushed' "$STATE_FILE") merged=$(jq -r '.current_task.git.merged' "$STATE_FILE")"
         fi
-        echo "  Verify:     $(jq -r '[.current_task.verification | to_entries[] | .key + "=" + .value.status] | join(", ")' "$STATE_FILE" 2>/dev/null || echo "pending")"
-        echo "  Git:        committed=$(jq -r '.current_task.git.committed' "$STATE_FILE") pushed=$(jq -r '.current_task.git.pushed' "$STATE_FILE") merged=$(jq -r '.current_task.git.merged' "$STATE_FILE")"
+        local handoff
+        handoff=$(read_handoff)
+        [ "$handoff" != "null" ] && tx_kv "Handoff" "$(jq -r '.handoff.context_summary' "$STATE_FILE")"
+        tx_kv "Progress" "$(jq -r '(.overall_progress.done|tostring) + "/" + (.overall_progress.total|tostring)' "$STATE_FILE")"
+        tx_rule
+    else
+        echo "═══════════════════════════════════════════════════════"
+        echo "  TeamX Dev State Machine (v${STATE_VERSION})"
+        echo "═══════════════════════════════════════════════════════"
+        echo "  Project:    $(jq -r '.project_code + " — " + .project_name' "$STATE_FILE")"
+        echo "  Gate:       $(read_gate)"
+        echo "  Milestone:  $(jq -r '.active_milestone.title + " (" + (.active_milestone.done_tasks|tostring) + "/" + (.active_milestone.total_tasks|tostring) + ")"' "$STATE_FILE")"
+        if [ "$(read_current_task_uuid)" != "" ]; then
+            echo "  Task:       $(read_current_task_title)"
+            local wt
+            wt=$(read_work_type)
+            [ -n "$wt" ] && echo "  Type:       $wt ($(read_flow_variant))"
+            local rd
+            rd=$(read_readiness)
+            [ -n "$rd" ] && echo "  Readiness:  $rd"
+            echo "  Branch:     $(read_current_branch)"
+            local plan_status
+            plan_status=$(jq -r '.current_task.plan.approved // empty' "$STATE_FILE" 2>/dev/null)
+            [ -n "$plan_status" ] && echo "  Plan:       approved=$plan_status"
+            local criteria_total criteria_satisfied
+            criteria_total=$(jq -r '.current_task.criteria_total // 0' "$STATE_FILE" 2>/dev/null)
+            criteria_satisfied=$(jq -r '.current_task.criteria_satisfied // 0' "$STATE_FILE" 2>/dev/null)
+            if [ "$criteria_total" -gt 0 ] 2>/dev/null; then
+                echo "  Criteria:   ${criteria_satisfied}/${criteria_total} satisfied"
+            fi
+            echo "  Verify:     $(jq -r '[.current_task.verification | to_entries[] | .key + "=" + .value.status] | join(", ")' "$STATE_FILE" 2>/dev/null || echo "pending")"
+            echo "  Git:        committed=$(jq -r '.current_task.git.committed' "$STATE_FILE") pushed=$(jq -r '.current_task.git.pushed' "$STATE_FILE") merged=$(jq -r '.current_task.git.merged' "$STATE_FILE")"
+        fi
+        local handoff
+        handoff=$(read_handoff)
+        [ "$handoff" != "null" ] && echo "  Handoff:    $(jq -r '.handoff.context_summary' "$STATE_FILE")"
+        echo "  Progress:   $(jq -r '(.overall_progress.done|tostring) + "/" + (.overall_progress.total|tostring)' "$STATE_FILE")"
+        echo "═══════════════════════════════════════════════════════"
     fi
-    local handoff
-    handoff=$(read_handoff)
-    [ "$handoff" != "null" ] && echo "  Handoff:    $(jq -r '.handoff.context_summary' "$STATE_FILE")"
-    echo "  Progress:   $(jq -r '(.overall_progress.done|tostring) + "/" + (.overall_progress.total|tostring)' "$STATE_FILE")"
-    echo "═══════════════════════════════════════════════════════"
 }
 
 # Improvement #3 — Show time spent per gate for the current task

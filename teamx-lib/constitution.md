@@ -1,6 +1,6 @@
 ---
-version: 1.0.0
-ratified: 2026-04-16
+version: 1.1.0
+ratified: 2026-04-18
 scope: agency
 source: devkit/teamx-lib/constitution.md
 ---
@@ -98,6 +98,54 @@ uncertainty with fluent language.
 **MUST**: A project without a client must carry `is_internal=true`.
 **MUST**: An external project (`is_internal=false`) must have a client assigned
 before an SDD session starts.
+
+---
+
+## Article IX — Secrets Hygiene
+
+**MUST NOT**: Stage, commit, or push any of the following paths under any
+circumstance, in any repository, on any branch:
+
+- `.mcp.json` and `**/.mcp.json` — MCP server configs frequently contain bearer
+  tokens, API keys, or remote URLs with embedded credentials.
+- `.teamx/` and `**/.teamx/` — agent state, handoff notes, lessons, and
+  workflow snapshots may include task descriptions, customer data, or
+  credentials pasted by the user.
+- `.claude/` and `**/.claude/` — Claude Code local settings, hooks, allow-lists,
+  and permission overrides. Often holds machine-specific paths and tokens.
+- `.opencode/` and `**/.opencode/` — OpenCode local config and plugin state.
+- `.env`, `.env.*`, `**/.env`, `**/.env.*` — environment files.
+- `secrets/`, `tokens/`, `credentials*.json`, `service-account*.json`.
+- Private key material: `*.pem`, `*.key`, `id_rsa`, `id_ed25519`, `*.p12`, `*.pfx`.
+
+**MUST**: On `INIT`, the agent ensures the project `.gitignore` covers every
+path above. If `.gitignore` is missing or incomplete, the agent appends the
+missing entries before any other gate work.
+
+**MUST**: At `COMMIT`, before invoking `git commit`, the agent runs
+`bash .teamx/lib/state.sh check_no_secrets_staged`. If the helper exits
+non-zero, the commit is aborted and the offending paths are unstaged via
+`git restore --staged <path>`. The agent then registers
+`pause_for_decision "security-risk-detected"` if the file appeared via
+`git add` of a directory or wildcard — this signals a process bug, not a
+typo.
+
+**MUST NOT**: Bypass this check with `--no-verify`, by editing
+`check_no_secrets_staged` to return `0`, or by force-pushing a branch that
+already contains a forbidden path. If a forbidden path was already pushed,
+treat it as a credential-leak incident:
+
+1. Rotate the leaked credential **first** — assume it is compromised.
+2. Then rewrite history (`git filter-repo` or BFG) and force-push **only
+   after the credential is rotated**.
+3. Open a postmortem under `.teamx/journal/` documenting blast radius and
+   prevention.
+
+**Why**: A single committed `.mcp.json` with a live token gives any reader of
+the repo (including forks, mirrors, and CI logs) full access to the MCP
+backend. Removing the file from the working tree does not remove it from git
+history. The cost of one accidental commit dwarfs the cost of always
+gitignoring these paths from day one.
 
 ---
 
