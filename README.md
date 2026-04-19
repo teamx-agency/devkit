@@ -367,6 +367,7 @@ teamx-devkit/
 ├── opencode-plugin.js       <- Entry point npm para OpenCode ("teamx-devkit/opencode-plugin")
 ├── install.sh               <- MCP installer para Antigravity, Codex, Crush
 ├── install-opencode.sh      <- One-liner installer para OpenCode
+├── uninstall-opencode.sh    <- Uninstaller para OpenCode (--purge para borrar .teamx/)
 ├── package.json
 └── tsconfig.json
 ```
@@ -392,6 +393,22 @@ cp node_modules/teamx-devkit/configs/opencode/opencode.json .opencode/opencode.j
 cp node_modules/teamx-devkit/configs/opencode/instructions/teamx-dev.md .opencode/instructions/
 opencode
 ```
+
+### Desinstalacion
+
+```bash
+bash uninstall-opencode.sh            # conserva .teamx/ (config del proyecto)
+bash uninstall-opencode.sh --purge    # elimina tambien .teamx/
+```
+
+Que hace:
+
+1. Remueve el paquete `teamx-devkit` (via `bun remove` o `npm uninstall`).
+2. Edita `.opencode/opencode.json` de forma quirurgica con `jq`: quita el plugin `teamx-devkit/opencode-plugin`, la instruction `teamx-dev.md` y el bloque `mcp.teamx`. Si el JSON queda vacio (solo `$schema`), se elimina el archivo.
+3. Borra `.opencode/instructions/teamx-dev.md` y los directorios `.opencode/` que queden vacios.
+4. Conserva `.teamx/` por default — contiene `constitution.md`, `config.json` y otros datos del proyecto. Usa `--purge` para eliminarlo.
+
+Si `jq` no esta instalado, el script avisa que bloques remover a mano y sigue con el resto de la limpieza.
 
 ### Como funciona en OpenCode
 
