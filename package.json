@@ -1,13 +1,17 @@
 {
   "name": "teamx-devkit",
-  "version": "2.2.6",
-  "description": "TeamX Delivery OS — Hook-enforced state machine for Claude Code and OpenCode",
+  "version": "2.3.0",
+  "description": "TeamX Delivery OS — Hook-enforced state machine for Claude Code, OpenCode, and Codex",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
     ".": "./dist/index.js",
     "./opencode-plugin": "./opencode-plugin.js"
+  },
+  "bin": {
+    "teamx-devkit-codex-install": "./install-codex.sh",
+    "teamx-devkit-codex-uninstall": "./uninstall-codex.sh"
   },
   "scripts": {
     "build": "tsc",
@@ -22,7 +26,10 @@
     "dist",
     "teamx-lib",
     "opencode-plugin.js",
-    "configs/opencode"
+    "configs/opencode",
+    "configs/codex",
+    "install-codex.sh",
+    "uninstall-codex.sh"
   ],
   "devDependencies": {
     "typescript": "^5.5.0",

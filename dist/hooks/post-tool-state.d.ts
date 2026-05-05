@@ -12,6 +12,8 @@ export interface PostToolInput {
     toolInput?: Record<string, unknown>;
     tool_output?: string;
     toolOutput?: string;
+    tool_response?: unknown;
+    toolResponse?: unknown;
     cwd?: string;
     directory?: string;
 }

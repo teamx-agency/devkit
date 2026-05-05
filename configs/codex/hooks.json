@@ -1,0 +1,57 @@
+{
+  "description": "TeamX DevKit — Codex hook template. install-codex.sh writes absolute package paths.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"__TEAMX_DEVKIT_ROOT__/scripts/run.cjs\" \"__TEAMX_DEVKIT_ROOT__/scripts/session-start.mjs\"",
+            "timeout": 5,
+            "statusMessage": "Restoring TeamX state"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"__TEAMX_DEVKIT_ROOT__/scripts/run.cjs\" \"__TEAMX_DEVKIT_ROOT__/scripts/pre-tool-gate.mjs\"",
+            "timeout": 3,
+            "statusMessage": "Checking TeamX gate"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"__TEAMX_DEVKIT_ROOT__/scripts/run.cjs\" \"__TEAMX_DEVKIT_ROOT__/scripts/post-tool-state.mjs\"",
+            "timeout": 3,
+            "statusMessage": "Refreshing TeamX state"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"__TEAMX_DEVKIT_ROOT__/scripts/run.cjs\" \"__TEAMX_DEVKIT_ROOT__/scripts/stop-guard.mjs\"",
+            "timeout": 5,
+            "statusMessage": "Checking TeamX handoff"
+          }
+        ]
+      }
+    ]
+  }
+}

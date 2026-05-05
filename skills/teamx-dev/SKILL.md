@@ -139,10 +139,6 @@ IDLE → INIT → SELECT → CLASSIFY → [PLAN] → IMPLEMENT → VERIFY → CO
    - Surface constitution and tech stack to user
 7. Call `teamx_get_shared_lessons(project_code, limit=10)` → save to `.teamx/shared-lessons.json` → surface top 3 signals
 7c. If project has a defined client: call `teamx_get_stack_experience(project_code)` → surface `frequency_summary` to user so architecture decisions are informed by real stack patterns from similar projects
-7b. **Engram** — `bash .teamx/lib/engram.sh check` → if available:
-   - `bash .teamx/lib/engram.sh import` — sync shared memory from team
-   - Call `get_context(layers=["project","architecture","recent-decisions"])` → surface any relevant cross-session insights under `[Engram Context]`
-   - If not available: skip silently
 8. Read experience files: `persona.yaml`, `modes.yaml`, `rituals.yaml`, `voice.md`, `work_types.yaml`
 9. If `.teamx/handoff.md` exists → present context; if `.teamx/lessons.json` exists → surface top patterns
 10. `bash .teamx/lib/state.sh migrate_state`
@@ -462,11 +458,7 @@ Mandatory. At least 1 insight required before advancing.
      }
      ```
    - `bash .teamx/lib/state.sh require_postmortem` — blocks if incomplete
-6. **Engram** — if available: for each insight, call (once per insight — do not batch):
-   `save_observation(layer="lessons", content="[insight text]", tags=["retro", "[project_code]"])`
-   Then: `bash .teamx/lib/engram.sh export` — syncs memory to git for team import. Output confirms: "Memory exported."
-   Run BEFORE advancing gate.
-7. `bash .teamx/lib/state.sh complete_retrospective` → checks postmortem, then `set_gate "SELECT"`
+6. `bash .teamx/lib/state.sh complete_retrospective` → checks postmortem, then `set_gate "SELECT"`
 
 ---
 

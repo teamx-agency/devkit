@@ -19,6 +19,8 @@ export interface PostToolInput {
   toolInput?: Record<string, unknown>;
   tool_output?: string;
   toolOutput?: string;
+  tool_response?: unknown;
+  toolResponse?: unknown;
   cwd?: string;
   directory?: string;
 }
@@ -184,6 +186,16 @@ function buildModeDirective(gate: string, toolInput: Record<string, unknown>): s
   );
 }
 
+function stringifyToolOutput(data: PostToolInput): string {
+  const output = data.tool_output ?? data.toolOutput ?? data.tool_response ?? data.toolResponse ?? '';
+  if (typeof output === 'string') return output;
+  try {
+    return JSON.stringify(output);
+  } catch {
+    return String(output);
+  }
+}
+
 export function handlePostToolUse(data: PostToolInput): PostToolOutput {
   const toolName = data.tool_name || data.toolName || '';
   const toolInput = (data.tool_input || data.toolInput || {}) as Record<string, unknown>;
@@ -218,7 +230,7 @@ export function handlePostToolUse(data: PostToolInput): PostToolOutput {
       );
     }
     // Gap #1 — read server-authoritative qa_warnings (duplicate criteria, etc.)
-    const output = data.tool_output || data.toolOutput || '';
+    const output = stringifyToolOutput(data);
     const serverWarnings = extractServerQaWarnings(output);
     if (serverWarnings.length > 0) {
       messages.push(serverWarnings.join('\n\n'));
@@ -233,7 +245,7 @@ export function handlePostToolUse(data: PostToolInput): PostToolOutput {
 
   // After get_task_detail: warn if criteria are missing, inject criteria progress hint (Gap #5)
   if (toolName === 'mcp__teamx__teamx_get_task_detail') {
-    const output = data.tool_output || data.toolOutput || '';
+    const output = stringifyToolOutput(data);
     const criteriaMissing = output.includes('"criteria_status":"missing"') ||
                             output.includes('"criteria_status": "missing"');
     if (criteriaMissing && state.current_task?.work_type !== 'chore') {
@@ -286,7 +298,7 @@ export function handlePostToolUse(data: PostToolInput): PostToolOutput {
 
   // After update_acceptance_criteria: confirm update and remind to re-check readiness
   if (toolName === 'mcp__teamx__teamx_update_acceptance_criteria') {
-    const output = data.tool_output || data.toolOutput || '';
+    const output = stringifyToolOutput(data);
     try {
       const parsed = JSON.parse(output);
       const criteria: unknown[] = parsed?.data?.data?.acceptance_criteria
@@ -306,7 +318,7 @@ export function handlePostToolUse(data: PostToolInput): PostToolOutput {
 
   // After satisfy_acceptance_criterion: validate API response (Gap #8)
   if (toolName === 'mcp__teamx__teamx_satisfy_acceptance_criterion') {
-    const output = data.tool_output || data.toolOutput || '';
+    const output = stringifyToolOutput(data);
     const warning = checkSatisfyResponse(output);
     if (warning) {
       messages.push(warning);

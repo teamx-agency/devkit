@@ -26,7 +26,21 @@ curl -sSL https://raw.githubusercontent.com/teamx-agency/devkit/main/install-ope
 
 Instala `teamx-devkit` via npm/bun, crea `.opencode/` y descarga los archivos de configuracion. Ver [seccion OpenCode](#opencode) para detalles.
 
-### Otros tools (Antigravity, Codex, Crush)
+### Codex — One-liner
+
+```bash
+curl -sSL https://raw.githubusercontent.com/teamx-agency/devkit/main/install-codex.sh | bash
+```
+
+Instala `teamx-devkit` global, registra MCP + hooks en `~/.codex/` e instala skills `$teamx-*` en `~/.agents/skills/`. Ver [seccion Codex](#codex) para detalles.
+
+Rollback rapido:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/teamx-agency/devkit/main/uninstall-codex.sh | bash
+```
+
+### Otros tools (Antigravity, Crush)
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/teamx-agency/devkit/main/install.sh | bash
@@ -40,7 +54,7 @@ Configura el MCP de TeamX en las herramientas detectadas.
 /teamx-status
 ```
 
-Si responde con el dashboard de proyectos, la instalacion fue exitosa.
+En Codex usa `$teamx-status`. Si responde con el dashboard de proyectos, la instalacion fue exitosa.
 
 ---
 
@@ -358,6 +372,9 @@ teamx-devkit/
 │   ├── lessons.sh           <- Extrae patrones de journals
 │   └── persona.yaml, modes.yaml, rituals.yaml, voice.md, work_types.yaml
 ├── configs/
+│   ├── codex/               <- Config + hooks template para Codex
+│   │   ├── config.toml
+│   │   └── hooks.json
 │   └── opencode/            <- Plugin y config para OpenCode
 │       ├── opencode.json    <- Config: plugin + MCP + instructions
 │       ├── plugins/
@@ -365,12 +382,79 @@ teamx-devkit/
 │       └── instructions/
 │           └── teamx-dev.md <- State machine como instrucciones del LLM
 ├── opencode-plugin.js       <- Entry point npm para OpenCode ("teamx-devkit/opencode-plugin")
-├── install.sh               <- MCP installer para Antigravity, Codex, Crush
+├── install.sh               <- MCP installer para Antigravity y Crush
 ├── install-opencode.sh      <- One-liner installer para OpenCode
 ├── uninstall-opencode.sh    <- Uninstaller para OpenCode (--purge para borrar .teamx/)
+├── install-codex.sh         <- One-liner installer para Codex
+├── uninstall-codex.sh       <- Uninstaller para Codex
 ├── package.json
 └── tsconfig.json
 ```
+
+---
+
+## Codex
+
+El port de Codex usa las capacidades nativas actuales: MCP remoto, hooks de ciclo de vida y skills desde `~/.agents/skills`.
+
+### Instalacion rapida
+
+```bash
+curl -sSL https://raw.githubusercontent.com/teamx-agency/devkit/main/install-codex.sh | bash
+```
+
+O manual, desde un paquete npm ya instalado:
+
+```bash
+npm install -g teamx-devkit
+teamx-devkit-codex-install
+```
+
+### Desinstalacion rapida
+
+```bash
+curl -sSL https://raw.githubusercontent.com/teamx-agency/devkit/main/uninstall-codex.sh | bash
+```
+
+Por default remueve hooks, MCP y skills TeamX, y tambien desinstala el paquete global si fue instalado con npm. Para conservar el paquete y solo limpiar Codex:
+
+```bash
+bash uninstall-codex.sh --keep-package
+```
+
+El uninstall crea backups timestamped de `~/.codex/config.toml` y `~/.codex/hooks.json`, remueve solo entradas TeamX y preserva hooks/configuracion ajena.
+
+### Como funciona en Codex
+
+El instalador configura:
+
+- `~/.codex/config.toml` con `[features].codex_hooks = true` y MCP `teamx`.
+- `~/.codex/hooks.json` con `SessionStart`, `PreToolUse`, `PostToolUse` y `Stop`.
+- `~/.agents/skills/teamx-*` como symlinks a las skills del paquete.
+
+Invocacion en Codex:
+
+```
+$teamx-dev PRJ-001
+$teamx-status
+$teamx-review
+$teamx-handoff
+$teamx-health
+$teamx-analyze
+$teamx-constitution
+```
+
+### Diferencias con Claude Code
+
+| | Claude Code | Codex |
+|---|---|---|
+| Instalar | `/plugin` → marketplace | `install-codex.sh` global |
+| Skills | `/teamx-dev` | `$teamx-dev` |
+| Hooks | `hooks/hooks.json` via plugin | `~/.codex/hooks.json` |
+| PreCompact | Hook dedicado | No disponible; se cubre con cache en `PostToolUse` + restore en `SessionStart` |
+| File edits | `Edit` / `Write` | `apply_patch` bloqueado fuera de IMPLEMENT |
+
+Los hooks de Codex son guardrails: bloquean `apply_patch`, Bash simple y MCP tools soportadas por el runtime. El state machine sigue siendo la fuente de verdad.
 
 ---
 

@@ -189,8 +189,6 @@ const ALWAYS_ALLOWED = new Set([
   'TaskUpdate', 'TaskList', 'TaskGet', 'AskUserQuestion',
   'EnterPlanMode', 'ExitPlanMode', 'Skill', 'WebSearch', 'WebFetch',
   'LSP', 'ToolSearch',
-  'mcp__engram__get_context',
-  'mcp__engram__save_observation',
 ])
 
 function expandGatesForVariant(gates, flowVariant) {

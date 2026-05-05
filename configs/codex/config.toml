@@ -1,5 +1,10 @@
 # TeamX Dev Kit — Codex CLI config
-# Docs: https://developers.openai.com/codex/mcp
+# Docs:
+#   https://developers.openai.com/codex/mcp
+#   https://developers.openai.com/codex/hooks
+
+[features]
+codex_hooks = true
 
 [mcp_servers.teamx]
 url = "https://teamx.agency/mcp/v1/message"

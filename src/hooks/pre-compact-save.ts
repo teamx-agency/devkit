@@ -60,20 +60,6 @@ export function handlePreCompact(data: PreCompactInput): PreCompactOutput {
     ? `\n\n⚠ PERSONA: Re-read .teamx/persona.yaml to restore identity, behavioral rules, and candor policy.`
     : '';
 
-  // Engram — remind agent to restore cognitive context after compaction
-  let engramReminder = '';
-  const engramStatusPath = join(cwd, '.teamx', 'engram-status.json');
-  if (existsSync(engramStatusPath)) {
-    try {
-      const engramStatus = JSON.parse(readFileSync(engramStatusPath, 'utf-8'));
-      if (engramStatus?.available === true) {
-        engramReminder =
-          `\n\n⚠ ENGRAM: After compaction, call get_context(layers=["project","architecture","recent-decisions"]) ` +
-          `to restore cross-session memory context.`;
-      }
-    } catch { /* ignore */ }
-  }
-
   // Experience layer — remind agent to re-read behavior contract after compaction
   const experiencePaths = ['persona.yaml', 'modes.yaml', 'voice.md'];
   const anyExperience = experiencePaths.some(f => existsSync(join(cwd, '.teamx', f)));
@@ -91,7 +77,6 @@ export function handlePreCompact(data: PreCompactInput): PreCompactOutput {
         `${summary}` +
         criteriaReminder +
         personaReminder +
-        engramReminder +
         experienceReminder +
         `\n\nRe-read .teamx/state.json for full context.\n` +
         `Run: bash .teamx/lib/state.sh print_status`,

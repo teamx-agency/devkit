@@ -24,15 +24,6 @@ gates:
     pattern: >
       "Project [X], milestone [Y]. [N] tasks pending, [M] in progress.
       Stack is [stack]. [Risk or constraint if any]. Ready to pick a task."
-    engram:
-      sync_import: true
-      get_context:
-        layers: ["project", "architecture", "recent-decisions"]
-        instruction: >
-          If engram MCP tools are available: call get_context with the layers above.
-          Append retrieved memory to the situational awareness summary under [Engram Context].
-          Do not narrate the call — only surface relevant insights.
-          If not available: skip silently.
 
   # ---------------------------------------------------------------------------
   SELECT:
@@ -45,13 +36,6 @@ gates:
     pattern: >
       "Taking [task] because [reason]. Criteria: [criteria in plain terms].
       This touches [layers/files]. Risk: [main risk]."
-    engram:
-      get_context:
-        layers: ["task-patterns", "past-corrections"]
-        instruction: >
-          If engram available: call get_context before selecting the task.
-          Use retrieved patterns to inform prioritization and risk assessment.
-          Incorporate into reasoning — do not narrate the call to the user.
 
   # ---------------------------------------------------------------------------
   IMPLEMENT:
@@ -64,19 +48,6 @@ gates:
     pattern: >
       "Plan: [what I'll do and where]. Starting with [first action].
       [Only speak again if something unexpected comes up or a decision is needed]."
-    engram:
-      save_on_correction:
-        trigger: human corrects agent approach
-        layer: corrections
-        instruction: >
-          If the human corrects your approach at any point during IMPLEMENT:
-          immediately call save_observation(
-            layer="corrections",
-            content="[what I proposed] → [what the human corrected to] — [why]",
-            tags=["correction", "#private if contains credentials or sensitive data"]
-          ).
-          This is the highest-value Engram capture point — corrections teach the team.
-          Do not wait until RETROSPECTIVE. Capture it now.
 
   # ---------------------------------------------------------------------------
   VERIFY:
@@ -188,13 +159,6 @@ gates:
     pattern: >
       "This task touches [N] files across [layers]. Plan: [sequence].
       Risk: [main risk]. Approve to proceed or adjust."
-    engram:
-      get_context:
-        layers: ["architecture", "implementation-patterns", "past-decisions"]
-        instruction: >
-          If engram available: call get_context before proposing the plan.
-          Flag any deviation from remembered architectural decisions as an explicit risk.
-          Include: "Engram: [relevant past decision]" in the plan if found.
 
   # ---------------------------------------------------------------------------
   CLASSIFY:
@@ -211,13 +175,6 @@ gates:
     pattern_not_ready: >
       "[Type]: [reason]. Blocked: [what's missing].
       Need [action] before this can enter implementation."
-    engram:
-      get_context:
-        layers: ["architecture", "work-type-patterns"]
-        instruction: >
-          If engram available: call get_context after teamx_get_task_detail.
-          Check if similar tasks were classified differently in the past.
-          Mention any relevant pattern found in readiness assessment.
 
   # ---------------------------------------------------------------------------
   EVIDENCE:
@@ -237,17 +194,6 @@ gates:
       "Fix applied: [what changed]. Root cause: [cause].
        Prevention: [what would prevent recurrence].
        Postmortem captured in journal."
-    engram:
-      save_observation:
-        layer: completed-work
-        instruction: >
-          If engram available: after satisfying all criteria and before set_gate "RETROSPECTIVE",
-          call save_observation(
-            layer="completed-work",
-            content="Task: [title] | Type: [work_type] | Delivered: [one paragraph] | Key decisions: [list]",
-            tags=["[project_code]", "[work_type]"]
-          ).
-          This feeds future get_context calls for similar tasks across the team.
 
   # ---------------------------------------------------------------------------
   RETROSPECTIVE:
@@ -267,19 +213,3 @@ gates:
     pattern: >
       "Retro: [insight]. Pattern worth remembering: [pattern].
       Updated lessons for next time."
-    engram:
-      save_observation:
-        layer: lessons
-        instruction: >
-          If engram available: for each insight from the retrospective, call
-          save_observation(
-            layer="lessons",
-            content="[insight text]",
-            tags=["retro", "[project_code]", "#private if sensitive"]
-          ).
-          Call once per insight — do not batch all insights in one observation.
-      sync_export:
-        instruction: >
-          After all save_observation calls: run bash .teamx/lib/engram.sh export
-          This syncs Engram memory to git so the team can import it on their next INIT.
-          Run BEFORE set_gate "SELECT". Output confirms: "Memory exported."

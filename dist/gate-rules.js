@@ -12,6 +12,8 @@ const TOOL_GATE_MAP = {
     Write: ['IMPLEMENT'],
     MultiEdit: ['IMPLEMENT'],
     NotebookEdit: ['IMPLEMENT'],
+    // Codex reports file edits through apply_patch.
+    apply_patch: ['IMPLEMENT'],
     // MCP TeamX — task lifecycle
     mcp__teamx__teamx_transition_task: ['SELECT', 'EVIDENCE'],
     mcp__teamx__teamx_batch_transition_tasks: ['SELECT', 'EVIDENCE'],
@@ -118,9 +120,6 @@ export function checkToolAllowed(toolName, toolInput, currentGate, flowVariant =
         'TaskUpdate', 'TaskList', 'TaskGet', 'AskUserQuestion',
         'EnterPlanMode', 'ExitPlanMode', 'Skill', 'WebSearch', 'WebFetch',
         'LSP', 'ToolSearch',
-        // Engram memory layer — allowed at all gates (observation, never workflow mutation)
-        'mcp__engram__get_context',
-        'mcp__engram__save_observation',
     ];
     // Bash needs special handling (check command patterns)
     if (toolName === 'Bash') {

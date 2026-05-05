@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ╔══════════════════════════════════════════════════╗
 # ║      TeamX Dev Kit — install.sh                  ║
-# ║      MCP para Antigravity, OpenCode, Codex, Crush║
+# ║      MCP para Antigravity, OpenCode, Crush       ║
 # ║                                                  ║
 # ║  Para Claude Code: instala via plugin manager    ║
 # ║  /plugin → Marketplaces → teamx-agency/devkit    ║
@@ -84,15 +84,6 @@ write_opencode_json() {
 CONF
 }
 
-write_codex_toml() {
-  cat <<'CONF'
-# TeamX Dev Kit — Codex CLI config
-
-[mcp_servers.teamx]
-url = "https://teamx.agency/mcp/v1/message"
-CONF
-}
-
 write_crush_toml() {
   cat <<'CONF'
 # TeamX Dev Kit — Crush config
@@ -168,25 +159,8 @@ echo ""
 
 # ── Codex CLI ─────────────────────────────────────────────────────────────────
 if [ "$HAS_CODEX" = "1" ]; then
-  log "Codex CLI → instalando..."
-
-  CODEX_DIR="$HOME/.codex"
-  CODEX_CFG="$CODEX_DIR/config.toml"
-  mkdir -p "$CODEX_DIR"
-
-  if [ -f "$CODEX_CFG" ]; then
-    if ! grep -q "\[mcp_servers.teamx\]" "$CODEX_CFG"; then
-      echo "" >> "$CODEX_CFG"
-      echo "[mcp_servers.teamx]" >> "$CODEX_CFG"
-      echo "url = \"$MCP_URL\"" >> "$CODEX_CFG"
-      ok "Codex CLI — MCP appended a config.toml existente"
-    else
-      ok "Codex CLI — MCP ya configurado, sin cambios"
-    fi
-  else
-    write_codex_toml > "$CODEX_CFG"
-    ok "Codex CLI — config.toml creado"
-  fi
+  warn "Codex CLI detectado — usa install-codex.sh para MCP + hooks + skills:"
+  echo -e "  ${TEAMX_CYAN}curl -sSL https://raw.githubusercontent.com/teamx-agency/devkit/main/install-codex.sh | bash${NC}"
 else
   skip "Codex CLI"
 fi

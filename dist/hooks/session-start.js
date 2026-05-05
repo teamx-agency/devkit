@@ -189,22 +189,6 @@ export function handleSessionStart(data) {
         }
         catch { /* ignore */ }
     }
-    // Engram memory layer — inject instructions if available (graceful degradation)
-    const engramStatusPath = join(cwd, '.teamx', 'engram-status.json');
-    if (existsSync(engramStatusPath)) {
-        try {
-            const engramStatus = JSON.parse(readFileSync(engramStatusPath, 'utf-8'));
-            if (engramStatus?.available === true) {
-                messages.push(`[Engram Memory Available]\n` +
-                    `Persistent cross-session memory is active for this project.\n` +
-                    `→ At INIT: bash .teamx/lib/engram.sh import, then call get_context(layers=["project","architecture","recent-decisions"])\n` +
-                    `→ During IMPLEMENT: call save_observation when the human corrects your approach (most important capture point)\n` +
-                    `→ At EVIDENCE: call save_observation(layer="completed-work") with delivery summary\n` +
-                    `→ At RETROSPECTIVE: save_observation per insight, then bash .teamx/lib/engram.sh export`);
-            }
-        }
-        catch { /* ignore — never block session start */ }
-    }
     // Experience layer — persona, modes, voice (behavioral contract)
     // Resolution order: project's .teamx/ → plugin root teamx-lib/ → install.sh teamx-lib/
     const experienceBase = resolveExperienceBase(cwd);
