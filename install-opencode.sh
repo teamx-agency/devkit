@@ -23,6 +23,9 @@ mkdir -p .opencode/instructions
 
 curl -sSL "$BASE/configs/opencode/opencode.json" -o .opencode/opencode.json
 curl -sSL "$BASE/configs/opencode/instructions/teamx-dev.md" -o .opencode/instructions/teamx-dev.md
+curl -sSL "$BASE/configs/opencode/instructions/teamx-context.md" -o .opencode/instructions/teamx-context.md
+curl -sSL "$BASE/configs/opencode/instructions/teamx-lessons.md" -o .opencode/instructions/teamx-lessons.md
+curl -sSL "$BASE/configs/opencode/instructions/teamx-rollback.md" -o .opencode/instructions/teamx-rollback.md
 
 # TeamX workspace — the OpenCode session hook expects .teamx/ to exist in the
 # target project. We seed examples so the dev sees where to customize.
