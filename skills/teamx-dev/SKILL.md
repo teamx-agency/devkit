@@ -61,6 +61,22 @@ IDLE → INIT → SELECT → CLASSIFY → [PLAN] → IMPLEMENT → VERIFY → CO
 - `compressed` — skip PLAN, minimal EVIDENCE, postmortem required (hotfix)
 - `discovery` — skip VERIFY through MERGE, produces findings document (spike)
 
+### Hotfix shortcut — `--hotfix "descripción"`
+
+If `$ARGUMENTS` contains `--hotfix "<description>"` (e.g. `/teamx-dev PRJ-005 --hotfix "login returns 500"`):
+
+1. **Pre-check**: `.teamx/` must exist with valid `state.json`. If missing → abort with "Run `/teamx-dev PRJ-001` first to complete INIT before using --hotfix."
+2. **Skip INIT and SELECT** entirely.
+3. Read `base_branch` from `.teamx/config.json` (default `origin/main`).
+4. Create hotfix branch: `git fetch origin && git checkout -b hotfix/<slug> <base_branch>`
+   - `<slug>` = description lowercased, spaces → hyphens, max 40 chars, alphanumeric + hyphens only.
+5. Register branch: `bash .teamx/lib/state.sh register_feature_branch hotfix/<slug>`
+6. Set work type: `bash .teamx/lib/state.sh set_work_type hotfix`
+7. Set gate to CLASSIFY: `bash .teamx/lib/state.sh set_gate CLASSIFY`
+8. Surface top-3 shared lessons filtered by `work_type=hotfix` (call `teamx_get_shared_lessons` with `topics: ["hotfix"]`).
+9. Announce: `⚡ HOTFIX — branch hotfix/<slug> ready. CLASSIFY gate. Production is down — move fast.`
+10. Proceed directly to CLASSIFY with `work_type=hotfix` pre-set. Skip the work_type question.
+
 ---
 
 ## INIT (first run only)
@@ -115,9 +131,14 @@ IDLE → INIT → SELECT → CLASSIFY → [PLAN] → IMPLEMENT → VERIFY → CO
       - `Strict — require all criteria satisfied (recommended)` — auto-merge only when every acceptance criterion is satisfied. Aligns with Article V of the Constitution.
       - `Lax — allow merge with unsatisfied criteria` — auto-merge when pipeline is green even if some criteria remain. Use only when criteria are aspirational rather than blocking.
 
-    After the user answers, write `.teamx/config.json` verbatim:
+    After the user answers, determine the base branch by inspecting the repo:
+    - Run `git remote show origin | grep 'HEAD branch'` to detect the default remote branch (e.g., `main`, `develop`, `008-plugin-separation`).
+    - Set `base_branch` to `"origin/<detected>"`. If detection fails, default to `"origin/main"`.
+
+    Write `.teamx/config.json` verbatim:
     ```json
     {
+      "base_branch": "origin/<detected>",
       "autonomy": {
         "branch_strategy": "<per-feature|per-task>",
         "plan": { "max_files": 8 },
@@ -128,11 +149,16 @@ IDLE → INIT → SELECT → CLASSIFY → [PLAN] → IMPLEMENT → VERIFY → CO
       }
     }
     ```
-    Confirm in one line: `✓ .teamx/config.json written — branch_strategy=<value>, review_strictness=<value>. Change later by editing the file.`
+    Confirm in one line: `✓ .teamx/config.json written — base_branch=<value>, branch_strategy=<value>, review_strictness=<value>. Change later by editing the file.`
 
     Do NOT ask these questions on subsequent INIT runs — the file's existence is the idempotency marker. Do NOT overwrite an existing `config.json`, even if its values look suspicious (the user edited them on purpose).
 5. Run: `bash .teamx/lib/init.sh <repo_path>` — extracts CI checks into `ci-profile.json` (stack-agnostic)
-   - Review output: if `checks: []` or commands look wrong, read `.gitlab-ci.yml` and populate manually
+   - **exit 0 + checks present**: OK. Review that commands match the actual project setup.
+   - **exit 0 + `generated_from` starts with `bootstrap:`**: Stack was auto-detected (no `.gitlab-ci.yml`). Warn user to review commands before running VERIFY.
+   - **exit 2**: Stack not detected and no `.gitlab-ci.yml`. Try in order:
+     a. Call `teamx_get_stack(stack_uuid)` (if stack is assigned to the project via `teamx_get_project_detail`). If `ci_profile` is non-null, write it to `.teamx/ci-profile.json` and continue.
+     b. If no `ci_profile` on Stack: register `bash .teamx/lib/state.sh pause_for_decision "ci-profile-empty" "No CI profile could be generated — no .gitlab-ci.yml and no Stack ci_profile" "[A] Add .gitlab-ci.yml and re-run init.sh | [B] Set ci_profile on the Stack via teamx_update_stack and re-run | [C] Write ci-profile.json manually and continue"` and wait for resolution.
+   - **exit 0 + `checks: []`**: The `.gitlab-ci.yml` was found but no check commands matched. Read the file and populate ci-profile.json manually.
 6. Call `teamx_list_sdd_sessions(project_code)`:
    - If a completed session exists → `teamx_read_sdd_session(session_uuid)` → save to `.teamx/sdd-summary.json`:
      `{ constitution, tech_stack, risks, summary }`

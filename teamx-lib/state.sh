@@ -866,15 +866,23 @@ can_advance_to_merge() {
 # Improvement #1 — Branch divergence check (run before COMMIT)
 # =============================================================================
 
-# Checks if origin/main has commits not in the current branch.
+# Returns the configured base branch (e.g. "origin/main", "origin/develop").
+# Reads from .teamx/config.json → base_branch; falls back to "origin/main".
+read_base_branch() {
+    _autonomy_config_get '.base_branch' 'origin/main'
+}
+
+# Checks if the base branch has commits not in the current branch.
 # Returns 0 if clean, 1 if diverged (with warning).
 check_branch_divergence() {
-    local branch
+    local branch base_branch
     branch=$(read_current_branch)
     if [ -z "$branch" ]; then
         echo "⚠  No branch set — skipping divergence check"
         return 0
     fi
+
+    base_branch=$(read_base_branch)
 
     echo "Fetching origin to check divergence..."
     git fetch origin --quiet 2>/dev/null || {
@@ -883,18 +891,18 @@ check_branch_divergence() {
     }
 
     local behind
-    behind=$(git rev-list HEAD..origin/main --count 2>/dev/null || echo "0")
+    behind=$(git rev-list HEAD..${base_branch} --count 2>/dev/null || echo "0")
     behind=$(echo "$behind" | tr -d '[:space:]')
 
     if [ "$behind" -gt "0" ]; then
-        echo "✗ BRANCH DIVERGENCE: origin/main has ${behind} commit(s) your branch doesn't have."
+        echo "✗ BRANCH DIVERGENCE: ${base_branch} has ${behind} commit(s) your branch doesn't have."
         echo "  This will likely cause merge conflicts in the pipeline."
-        echo "  Fix: git merge origin/main  (or git rebase origin/main)"
+        echo "  Fix: git merge ${base_branch}  (or git rebase ${base_branch})"
         echo "  Resolve conflicts, re-run VERIFY, then continue to COMMIT."
         return 1
     fi
 
-    echo "✓ Branch is up to date with origin/main"
+    echo "✓ Branch is up to date with ${base_branch}"
     return 0
 }
 

@@ -34,14 +34,70 @@ echo "  INIT — Parsing CI profile (stack-agnostic)"
 echo "═══════════════════════════════════════════════════════"
 
 if [ ! -f "$CI_FILE" ]; then
-    echo "  WARNING: No .gitlab-ci.yml found. Creating empty CI profile."
-    jq -n '{
-        generated_from: "none",
-        generated_at: "",
-        stack_hints: [],
-        checks: []
-    }' > "$CI_PROFILE"
-    echo "  CI profile: $CI_PROFILE (empty — agent will populate manually)"
+    echo "  No .gitlab-ci.yml found — detecting stack from project files..."
+
+    DETECTED_STACK=""
+    BOOTSTRAP_CHECKS="[]"
+
+    if [ -f "${REPO_PATH}/composer.json" ]; then
+        DETECTED_STACK="php"
+        BOOTSTRAP_CHECKS=$(jq -n '[
+            {"name": "phpstan",  "command": "./vendor/bin/phpstan analyse src plugins --level=6", "stage": "analyse"},
+            {"name": "phpunit",  "command": "./vendor/bin/phpunit",                               "stage": "test"}
+        ]')
+    elif [ -f "${REPO_PATH}/package.json" ]; then
+        DETECTED_STACK="node"
+        BOOTSTRAP_CHECKS=$(jq -n '[
+            {"name": "lint",  "command": "npm run lint",  "stage": "lint"},
+            {"name": "test",  "command": "npm test",      "stage": "test"}
+        ]')
+    elif [ -f "${REPO_PATH}/requirements.txt" ] || [ -f "${REPO_PATH}/pyproject.toml" ]; then
+        DETECTED_STACK="python"
+        BOOTSTRAP_CHECKS=$(jq -n '[
+            {"name": "flake8", "command": "python -m flake8 .", "stage": "lint"},
+            {"name": "pytest", "command": "python -m pytest",   "stage": "test"}
+        ]')
+    elif [ -f "${REPO_PATH}/go.mod" ]; then
+        DETECTED_STACK="go"
+        BOOTSTRAP_CHECKS=$(jq -n '[
+            {"name": "go-vet",  "command": "go vet ./...",  "stage": "lint"},
+            {"name": "go-test", "command": "go test ./...", "stage": "test"}
+        ]')
+    elif [ -f "${REPO_PATH}/Gemfile" ]; then
+        DETECTED_STACK="ruby"
+        BOOTSTRAP_CHECKS=$(jq -n '[
+            {"name": "rubocop", "command": "bundle exec rubocop",  "stage": "lint"},
+            {"name": "rspec",   "command": "bundle exec rspec",    "stage": "test"}
+        ]')
+    fi
+
+    if [ -z "$DETECTED_STACK" ]; then
+        echo "  ✗ Stack not detected — no composer.json, package.json, requirements.txt, go.mod, or Gemfile found."
+        echo "  → exit 2: SKILL.md should attempt teamx_get_stack(stack_uuid) to load ci_profile,"
+        echo "    or pause_for_decision for manual ci-profile entry."
+        jq -n '{generated_from: "none", generated_at: "", stack_hints: [], checks: []}' > "$CI_PROFILE"
+        exit 2
+    fi
+
+    GENERATED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%Y-%m-%dT%H:%M:%SZ")
+    jq -n \
+        --arg src "bootstrap:${DETECTED_STACK}" \
+        --arg at  "$GENERATED_AT" \
+        --argjson stack "[\"${DETECTED_STACK}\"]" \
+        --argjson checks "$BOOTSTRAP_CHECKS" \
+        '{
+            generated_from: $src,
+            generated_at: $at,
+            stack_hints: $stack,
+            checks: $checks,
+            note: "Bootstrap from stack detection (no .gitlab-ci.yml). Review and adjust commands."
+        }' > "$CI_PROFILE"
+
+    COUNT=$(echo "$BOOTSTRAP_CHECKS" | jq 'length')
+    echo "  ✓ Stack detected: ${DETECTED_STACK} — bootstrap ci-profile written with ${COUNT} checks."
+    echo "    Review .teamx/ci-profile.json and adjust commands to match the actual project setup."
+    echo "  CI profile: $CI_PROFILE"
+    echo "═══════════════════════════════════════════════════════"
     exit 0
 fi
 
