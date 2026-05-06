@@ -82,13 +82,16 @@ AVG_DURATION=$(echo "$ALL_JOURNALS" | jq '
 BOTTLENECKS=$(echo "$ALL_JOURNALS" | jq '
     # --- PLAN overtime per work_type ---
     [.[] |
-        select(.gate_timestamps.PLAN_enter != null and .gate_timestamps.PLAN_exit != null) |
+        select(
+            (.gate_times // []) |
+            map(select(.gate == "PLAN" and .duration_minutes != null)) |
+            length > 0
+        ) |
         {
             work_type: (.work_type // "feature"),
             plan_minutes: (
-                (.gate_timestamps.PLAN_exit | fromdateiso8601) -
-                (.gate_timestamps.PLAN_enter | fromdateiso8601)
-            ) / 60 | floor
+                (.gate_times | map(select(.gate == "PLAN" and .duration_minutes != null)) | .[0].duration_minutes) // 0
+            )
         }
     ] |
     group_by(.work_type) |
@@ -117,10 +120,10 @@ BOTTLENECKS=$(echo "$ALL_JOURNALS" | jq '
 
 SDD_SIGNALS=$(echo "$ALL_JOURNALS" | jq --argjson bottlenecks "$BOTTLENECKS" '
     $bottlenecks | map({
-        signal: .signal,
+        signal: .pattern,
         work_type: .work_type,
         gate: .gate,
-        pattern: .pattern,
+        pattern: .signal,
         suggested_action: .suggested_sdd_action,
         severity: .severity,
         frequency: .occurrence_count,

@@ -40,6 +40,14 @@ echo "════════════════════════�
 echo "  VERIFY GATE — Running CI checks locally"
 echo "═══════════════════════════════════════════════════════"
 
+# Fatal: empty ci-profile must not pass VERIFY
+if [ "$CI_CHECK_COUNT" -eq 0 ]; then
+    echo ""
+    echo "  FATAL: ci-profile has no checks. VERIFY cannot pass with an empty profile."
+    echo "  Fix: run init.sh again after adding .gitlab-ci.yml, or inject a bootstrap template."
+    exit 1
+fi
+
 # Warn if ci-profile doesn't meet minimum quality standards
 CI_PROFILE_WARNINGS=false
 if [ "$CI_CHECK_COUNT" -lt 2 ]; then

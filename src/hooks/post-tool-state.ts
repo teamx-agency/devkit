@@ -162,7 +162,7 @@ const GATE_MODE_MAP: Record<string, ModeEntry> = {
   PUSH:          { mode: 'execution', hint: 'Signal forward movement. Minimal.' },
   MR:            { mode: 'execution', hint: 'Confirm MR created. Set merge-when-pipeline-succeeds.' },
   PIPELINE:      { mode: 'recovery',  hint: 'On failure: read job log, diagnose root cause, set gate back to VERIFY. On success: confirm briefly.' },
-  REVIEW:        { mode: 'review',    hint: 'Pipeline passed. Present criteria evidence. Do NOT self-approve — wait for human QA confirmation.' },
+  REVIEW:        { mode: 'review',    hint: 'Pipeline passed. Present criteria evidence. Run auto_approve_qa_if_green — if all checks pass and AC are met, the task auto-approves. Only escalate to human if pipeline is red or criteria are incomplete.' },
   MERGE:         { mode: 'execution', hint: 'Confirm integration. Handle conflicts explicitly if present.' },
   EVIDENCE:      { mode: 'review',    hint: 'Map each acceptance criterion to concrete evidence (file, line, test, behavior). Be specific — not vague claims.' },
   RETROSPECTIVE: { mode: 'review',    hint: 'Extract learning. At least 1 insight. Push lessons with teamx_push_lessons. Update or delete stale lessons with teamx_update_lesson / teamx_delete_lesson. Capture ADRs, conventions and stack decisions with teamx_set_knowledge before advancing.' },
