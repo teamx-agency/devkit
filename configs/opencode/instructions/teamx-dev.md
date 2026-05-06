@@ -75,17 +75,44 @@ IDLE → INIT → SELECT → CLASSIFY → [PLAN] → IMPLEMENT → VERIFY → CO
     *.p12
     *.pfx
     ```
-4b. If `.teamx/config.json` missing, ask the user inline (only these two questions; single answer each):
-    - **Branch strategy**: `per-feature` (spec-kit style, one branch+MR per User Story, recommended) | `per-task` (legacy, one branch+MR per task).
-    - **Review strictness**: `strict` (require all acceptance criteria satisfied — recommended) | `lax` (allow merge with unsatisfied criteria).
+4b. **Bootstrap `.teamx/config.json`** (only if missing; skip silently if it exists. Never overwrite):
+    Ask the user a SINGLE question — **Config express — enter a 2-letter code** `[A|B][0|1|2]` — or press Enter to accept default `A1`:
+    - First letter — branch strategy: `A` = per-feature (recommended), `B` = per-task (legacy)
+    - Second character — reviewers at REVIEW: `0` = none (auto-merge when green), `1` = 1 reviewer, `2` = 2 reviewers
+    - Default if skipped or empty: `A1`
+
+    Also detect base branch: `git remote show origin | grep 'HEAD branch'` → `"origin/<detected>"` (fallback: `"origin/main"`).
+
     Write `.teamx/config.json`:
     ```json
-    {"autonomy":{"branch_strategy":"<per-feature|per-task>","plan":{"max_files":8},"review":{"require_all_criteria_satisfied":<true|false>,"required_reviewers":0}}}
+    {
+      "base_branch": "origin/<detected>",
+      "autonomy": {
+        "branch_strategy": "<per-feature|per-task>",
+        "plan": { "max_files": 8 },
+        "review": {
+          "require_all_criteria_satisfied": <true|false>,
+          "required_reviewers": <0|1|2>
+        }
+      }
+    }
     ```
-    Skip silently if the file exists. Never overwrite.
+    Confirm in one line: `✓ .teamx/config.json written — base_branch=<value>, branch_strategy=<value>, required_reviewers=<N>.`
 5. Load SDD session if exists; surface constitution and tech stack
+5b. Check for pending lesson sync: `PENDING=$(jq -r '.retrospective_sync_pending // false' .teamx/state.json)`. If `true` and `.teamx/lessons.json` exists: call `teamx_push_lessons`; on success: `bash .teamx/lib/state.sh clear_retrospective_pending` + note `✓ Pending lessons synced.`; on fail: keep flag, note `⚠ Lessons sync still failing — will retry.` Continue without blocking.
 6. Read experience files: `persona.yaml`, `modes.yaml`, `rituals.yaml`, `voice.md`, `work_types.yaml`
 6b. If project has a defined client: call `teamx_get_stack_experience(project_code)` → surface `frequency_summary` to inform architecture recommendations
+7a. Show available skills in a compact block:
+    ```
+    Available skills (prefix with $):
+      $teamx-context    — quick status (no MCP)
+      $teamx-lessons    — browse shared lessons
+      $teamx-hotfix     — production incident flow
+      $teamx-rollback   — structured rollback
+      $teamx-review     — review open MR
+      $teamx-status     — project dashboard
+      $teamx-handoff    — generate context handoff
+    ```
 7. `bash .teamx/lib/state.sh migrate_state && bash .teamx/lib/state.sh set_gate "SELECT"`
 
 ### SELECT
@@ -166,16 +193,27 @@ IDLE → INIT → SELECT → CLASSIFY → [PLAN] → IMPLEMENT → VERIFY → CO
 ### RETROSPECTIVE (mandatory)
 1. `bash .teamx/lib/lessons.sh`
 2. `bash .teamx/lib/state.sh print_cycle_times` — flag slow gates
-3. If signals: `teamx_push_lessons(code, <lessons.json>)` → surface top 2–3 insights
+3. If signals: call `teamx_push_lessons(code, <lessons.json>)` → surface top 2–3 insights
    - **Field limits:** `signal` max 500 chars, `pattern`/`suggested_action` unlimited, `work_type` max 50 chars, `gate` max 50 chars, `severity` = `low|medium|high`
    - Max 20 entries per call — split into multiple calls if needed
+   - **If `teamx_push_lessons` fails:** `bash .teamx/lib/state.sh mark_retrospective_pending ".teamx/lessons.json"` → show user `⚠ Lessons sync failed — will retry on next INIT`. Continue to step 4 — do NOT block.
 4. Hotfix: write postmortem → `bash .teamx/lib/state.sh require_postmortem` blocks if incomplete
 5. `bash .teamx/lib/state.sh complete_retrospective` → advances to SELECT
 
-### ROLLBACK (emergency)
+### ROLLBACK (emergency entry point)
+
+Triggered by `$teamx-rollback <project_code> <sha>` or when a merged change causes a production incident.
+
 1. `teamx_post_project_update(code, "🚨 ROLLBACK initiated: <what broke>", "incident")`
-2. Assess: revert (fastest) or forward-fix
-3. `bash .teamx/lib/state.sh set_work_type "hotfix"` — activates compressed flow with mandatory postmortem
+2. Verify SHA exists: `git cat-file -t <sha>`. Show the commit: `git log --oneline -1 <sha>`.
+3. Present three options and register a structured pause:
+   - **[A] git revert -m 1 <sha>** — Safe, auditable. No re-confirmation needed.
+   - **[B] git reset --hard <sha> + force push** — Destructive. Requires user to type `CONFIRM RESET <sha>` in chat exactly.
+   - **[C] Abort** — no changes made, no postmortem.
+4. Execute chosen option. For B: refuse to proceed until exact confirmation string is received.
+5. Persist to state: `jq '.last_rollback = {sha: "<sha>", action: "<revert|reset_hard>", executed_at: (now | todate)}' .teamx/state.json > .teamx/state.json.tmp && mv .teamx/state.json.tmp .teamx/state.json`
+6. Mandatory postmortem (A and B only): `teamx_post_project_update(code, "ROLLBACK completed — action=<X>, sha=<sha>\n\nWhat broke: <fill>\nWhy: <fill>\nAction taken: <A|B>\nNext steps: <fill>", "gate_transition")`
+7. `bash .teamx/lib/state.sh set_work_type "hotfix"` — activates compressed flow for follow-up if needed.
 
 ## Interaction Modes
 

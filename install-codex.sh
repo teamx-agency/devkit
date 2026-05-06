@@ -167,5 +167,12 @@ for skill in "$TEAMX_DEVKIT_ROOT"/skills/teamx-*; do
   fi
 done
 
+CODEX_AGENTS="$CODEX_DIR/AGENTS.md"
+AGENTS_SRC="$TEAMX_DEVKIT_ROOT/configs/codex/AGENTS.md"
+if [ -f "$AGENTS_SRC" ]; then
+  cp "$AGENTS_SRC" "$CODEX_AGENTS"
+  ok "Codex baseline: $CODEX_AGENTS"
+fi
+
 echo ""
 ok "Codex listo. Reinicia Codex y usa \$teamx-status o \$teamx-dev PRJ-XXX."

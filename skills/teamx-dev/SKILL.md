@@ -117,21 +117,30 @@ If `$ARGUMENTS` contains `--hotfix "<description>"` (e.g. `/teamx-dev PRJ-005 --
      *.pfx
      ```
 4b. **Bootstrap `.teamx/config.json`** (only if missing; otherwise skip silently):
-    The autonomy/branch-strategy config used to be a manual step — it isn't anymore. On first INIT, if `.teamx/config.json` does not exist, ask the user exactly TWO questions via `AskUserQuestion` (single-select, no multi-select):
+    The autonomy/branch-strategy config used to be a manual step — it isn't anymore. On first INIT, if `.teamx/config.json` does not exist, ask the user a SINGLE question via `AskUserQuestion`:
 
-    **Q1 — Branch strategy**
-    - Header: `Branch strategy`
-    - Options:
-      - `Per-feature (spec-kit style, recommended)` — one branch + MR per User Story; sibling tasks reuse the branch; MERGE waits until the whole US is done. Best for feature work with multiple tasks per story.
-      - `Per-task (legacy)` — one branch + MR per task; simplest for one-off fixes, refactors, or chores that don't belong to a US.
+    **Config express — enter a 2-letter code**
+    - Header: `Config express`
+    - Prompt: `Enter a 2-letter code: [A|B][0|1|2] — or press Enter to accept default A1`
+    - First letter — branch strategy:
+      - `A` = Per-feature (spec-kit style, recommended) — one branch + MR per User Story; sibling tasks reuse the branch; MERGE waits until the whole US is done.
+      - `B` = Single-branch (per-task, legacy) — one branch + MR per task; simplest for one-off fixes, refactors, or chores.
+    - Second character — reviewers required at REVIEW:
+      - `0` = No reviewers required — auto-merge when pipeline is green.
+      - `1` = 1 reviewer required before merge.
+      - `2` = 2 reviewers required before merge.
+    - Examples: `A1` = feature branches + 1 reviewer. `B0` = single-branch + no reviewer. `A2` = feature branches + 2 reviewers.
+    - **Default if skipped or empty**: `A1`
 
-    **Q2 — Acceptance criteria enforcement at REVIEW**
-    - Header: `Review strictness`
-    - Options:
-      - `Strict — require all criteria satisfied (recommended)` — auto-merge only when every acceptance criterion is satisfied. Aligns with Article V of the Constitution.
-      - `Lax — allow merge with unsatisfied criteria` — auto-merge when pipeline is green even if some criteria remain. Use only when criteria are aspirational rather than blocking.
+    Decode the answer:
+    - First letter `A` → `branch_strategy: "per-feature"`, `require_all_criteria_satisfied: true`
+    - First letter `B` → `branch_strategy: "per-task"`, `require_all_criteria_satisfied: false`
+    - Second character `0` → `required_reviewers: 0`
+    - Second character `1` → `required_reviewers: 1`
+    - Second character `2` → `required_reviewers: 2`
+    - Any unrecognized input → use default `A1` and note it.
 
-    After the user answers, determine the base branch by inspecting the repo:
+    After decoding, determine the base branch by inspecting the repo:
     - Run `git remote show origin | grep 'HEAD branch'` to detect the default remote branch (e.g., `main`, `develop`, `008-plugin-separation`).
     - Set `base_branch` to `"origin/<detected>"`. If detection fails, default to `"origin/main"`.
 
@@ -144,14 +153,14 @@ If `$ARGUMENTS` contains `--hotfix "<description>"` (e.g. `/teamx-dev PRJ-005 --
         "plan": { "max_files": 8 },
         "review": {
           "require_all_criteria_satisfied": <true|false>,
-          "required_reviewers": 0
+          "required_reviewers": <0|1|2>
         }
       }
     }
     ```
-    Confirm in one line: `✓ .teamx/config.json written — base_branch=<value>, branch_strategy=<value>, review_strictness=<value>. Change later by editing the file.`
+    Confirm in one line: `✓ .teamx/config.json written — base_branch=<value>, branch_strategy=<value>, required_reviewers=<N>. Change later by editing the file.`
 
-    Do NOT ask these questions on subsequent INIT runs — the file's existence is the idempotency marker. Do NOT overwrite an existing `config.json`, even if its values look suspicious (the user edited them on purpose).
+    Do NOT ask this question on subsequent INIT runs — the file's existence is the idempotency marker. Do NOT overwrite an existing `config.json`, even if its values look suspicious (the user edited them on purpose).
 5. Run: `bash .teamx/lib/init.sh <repo_path>` — extracts CI checks into `ci-profile.json` (stack-agnostic)
    - **exit 0 + checks present**: OK. Review that commands match the actual project setup.
    - **exit 0 + `generated_from` starts with `bootstrap:`**: Stack was auto-detected (no `.gitlab-ci.yml`). Warn user to review commands before running VERIFY.
@@ -168,7 +177,27 @@ If `$ARGUMENTS` contains `--hotfix "<description>"` (e.g. `/teamx-dev PRJ-005 --
 8. Read experience files: `persona.yaml`, `modes.yaml`, `rituals.yaml`, `voice.md`, `work_types.yaml`
 9. If `.teamx/handoff.md` exists → present context; if `.teamx/lessons.json` exists → surface top patterns
 10. `bash .teamx/lib/state.sh migrate_state`
+10b. **Retry pending lesson sync (SP3-K)** — after migration, check state for a pending sync:
+    ```bash
+    PENDING=$(jq -r '.retrospective_sync_pending // false' .teamx/state.json)
+    LESSONS_PATH=$(jq -r '.pending_lessons_file // ".teamx/lessons.json"' .teamx/state.json)
+    ```
+    If `PENDING == "true"` and the lessons file exists:
+    - Call `teamx_push_lessons(project_code, <content of LESSONS_PATH>)`
+    - If successful: `bash .teamx/lib/state.sh clear_retrospective_pending` and note: `✓ Pending lessons synced from previous session.`
+    - If it fails again: keep the flag set, note: `⚠ Lessons sync still failing — will retry on next INIT.` Continue without blocking.
 11. Write `.teamx/state.json` with project info → `set_gate "SELECT"`
+12. Show available skills in a compact block:
+    ```
+    Available skills:
+      /teamx-context    — quick status (no MCP)
+      /teamx-lessons    — browse shared lessons
+      /teamx-hotfix     — production incident flow
+      /teamx-rollback   — structured rollback
+      /teamx-review     — review open MR
+      /teamx-status     — project dashboard
+      /teamx-handoff    — generate context handoff
+    ```
 
 ---
 
@@ -466,10 +495,16 @@ Mandatory. At least 1 insight required before advancing.
 2. `bash .teamx/lib/state.sh print_cycle_times` — surface gate cycle times; flag any gate that took disproportionately long
 3. Read `.teamx/lessons.json`
 4. If `sdd_quality_signals`, `bottlenecks`, or `gate_cycle_times` (slow gates) non-empty:
-   - `teamx_push_lessons(project_code, <lessons.json content>)`
+   - Call `teamx_push_lessons(project_code, <lessons.json content>)`
    - **Field limits:** `signal` max 500 chars (descriptive sentence OK), `pattern` and `suggested_action` unlimited text, `work_type` max 50 chars, `gate` max 50 chars, `severity` one of `low|medium|high`
    - Keep `sdd_quality_signals` to ≤ 20 entries per call — split into multiple calls if lessons.json has more
-   - Surface top 2–3 signals to user with one-line interpretation each
+   - **If `teamx_push_lessons` returns `success: false` or throws an error:**
+     ```bash
+     bash .teamx/lib/state.sh mark_retrospective_pending ".teamx/lessons.json"
+     ```
+     Show the user: `⚠ Lessons sync failed — will retry on next INIT`
+     Continue to step 5 — do NOT block the retrospective completion.
+   - **If successful:** surface top 2–3 signals to user with one-line interpretation each
 5. If empty: note "No new patterns" briefly
 5. **Hotfix postmortem** — if `flow_variant == "compressed"`:
    - Write postmortem into `.teamx/lessons.json`:

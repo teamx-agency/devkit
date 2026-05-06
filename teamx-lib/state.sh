@@ -1239,6 +1239,37 @@ print_cycle_times() {
 }
 
 # =============================================================================
+# Retrospective sync — pending flag (SP3-K)
+# =============================================================================
+# When teamx_push_lessons fails during RETROSPECTIVE, the agent calls
+# mark_retrospective_pending with the lessons file path. On next INIT, the
+# agent checks for the flag and retries before entering SELECT.
+# =============================================================================
+
+# mark_retrospective_pending <lessons_file_path>
+# Sets retrospective_sync_pending=true and records the lessons file path.
+mark_retrospective_pending() {
+    local lessons_path="${1:-$LESSONS_FILE}"
+    local tmp
+    tmp=$(mktemp)
+    jq --arg p "$lessons_path" '
+        .retrospective_sync_pending = true |
+        .pending_lessons_file = $p
+    ' "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
+    echo "RETRO_SYNC → pending (lessons: $lessons_path)"
+}
+
+# clear_retrospective_pending
+# Removes retrospective_sync_pending (and pending_lessons_file) from state.
+clear_retrospective_pending() {
+    local tmp
+    tmp=$(mktemp)
+    jq 'del(.retrospective_sync_pending) | del(.pending_lessons_file)' \
+        "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
+    echo "RETRO_SYNC → cleared"
+}
+
+# =============================================================================
 # CLI dispatcher — invoke state.sh as a script (no `source` needed)
 # =============================================================================
 # Why: sourcing a script triggers harness-level "evaluates arguments as shell
