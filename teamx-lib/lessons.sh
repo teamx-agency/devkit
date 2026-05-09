@@ -137,10 +137,10 @@ VERIFY_SIGNAL=$(echo "$ALL_JOURNALS" | jq '
     if length > 0 then
         (add / length) as $avg |
         if $avg > 2 then [{
-            signal: "VERIFY_MULTI_FAIL",
+            signal: ("CI checks fail multiple times per task (avg " + ($avg * 10 | floor / 10 | tostring) + " runs)"),
             work_type: "all",
             gate: "VERIFY",
-            pattern: ("CI checks fail multiple times per task (avg " + ($avg * 10 | floor / 10 | tostring) + " runs)"),
+            pattern: "VERIFY_MULTI_FAIL",
             suggested_action: "Add explicit edge case scenarios (Given/When/Then) in SDD acceptance criteria",
             severity: "medium",
             frequency: length,

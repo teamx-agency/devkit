@@ -322,7 +322,7 @@ Mandatory. Determines work type, checks readiness, creates branch.
 ## VERIFY (hard gate — deterministic)
 
 - **discovery flow**: skip — `set_gate "EVIDENCE"` directly
-- **empty ci-profile**: if `ci-profile.json` has `checks: []`, warn user and ask to confirm skip or populate first
+- **empty ci-profile**: if `ci-profile.json` has `checks: []`, register `bash .teamx/lib/state.sh pause_for_decision "ci-profile-empty" "ci-profile.json has no checks — VERIFY cannot pass with an empty profile" "[A] Add .gitlab-ci.yml and re-run init.sh | [B] Set ci_profile on the Stack via teamx_update_stack and re-run init.sh | [C] Write ci-profile.json checks manually and re-run verify.sh"` and STOP. Do NOT skip or advance the gate.
 - **standard/compressed**: `bash .teamx/lib/verify.sh <repo_path>`
   - ALL pass → `set_gate "COMMIT"`
   - ANY fail → recovery mode: diagnose root cause, fix, re-run — do NOT advance gate manually
