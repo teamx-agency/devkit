@@ -884,6 +884,11 @@ check_branch_divergence() {
 
     base_branch=$(read_base_branch)
 
+    if ! [[ "$base_branch" =~ ^[a-zA-Z0-9/_.-]+$ ]]; then
+        echo "⚠  base_branch tiene caracteres inválidos — saltando check de divergencia"
+        return 0
+    fi
+
     echo "Fetching origin to check divergence..."
     git fetch origin --quiet 2>/dev/null || {
         echo "⚠  Could not fetch origin — skipping divergence check"
@@ -891,13 +896,13 @@ check_branch_divergence() {
     }
 
     local behind
-    behind=$(git rev-list HEAD..${base_branch} --count 2>/dev/null || echo "0")
+    behind=$(git rev-list HEAD.."${base_branch}" --count 2>/dev/null || echo "0")
     behind=$(echo "$behind" | tr -d '[:space:]')
 
     if [ "$behind" -gt "0" ]; then
         echo "✗ BRANCH DIVERGENCE: ${base_branch} has ${behind} commit(s) your branch doesn't have."
         echo "  This will likely cause merge conflicts in the pipeline."
-        echo "  Fix: git merge ${base_branch}  (or git rebase ${base_branch})"
+        echo "  Fix: git merge \"${base_branch}\"  (or git rebase \"${base_branch}\")"
         echo "  Resolve conflicts, re-run VERIFY, then continue to COMMIT."
         return 1
     fi
