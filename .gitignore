@@ -16,6 +16,7 @@ Thumbs.db
 # AI agent local state
 .claude/
 .opencode/
+.codex
 
 node_modules/
 # dist/ is intentionally committed — the plugin serves compiled JS directly
