@@ -172,6 +172,7 @@ export function runHooks(
   const results: ExtensionHookResult[] = [];
   for (const hook of hooks) {
     try {
+      // TRUST BOUNDARY: hook.command originates from .teamx/extensions.yml — review this file before running in untrusted repos.
       const proc = spawnSync('sh', ['-c', hook.command], {
         cwd,
         input: payload,
