@@ -1,6 +1,15 @@
 # Secrets — nunca commitear
+.env
 *.env
 .env.*
+*.pem
+*.key
+*.p12
+*.pfx
+.netrc
+credentials.json
+token.json
+service-account*.json
 secrets/
 tokens/
 
